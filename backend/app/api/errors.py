@@ -1,0 +1,82 @@
+"""Uniform error contract and exception handlers.
+
+Every error response is shaped as::
+
+    { "error": { "code": "string", "message": "string", "details": {} } }
+
+Keys are camelCase because the models inherit `ApiModel`.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import FastAPI, HTTPException, Request, status
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from pydantic import Field
+
+from app.logging_config import get_logger
+from app.models.base import ApiModel
+
+log = get_logger("api.errors")
+
+
+class ErrorDetail(ApiModel):
+    """The body of an error response."""
+
+    code: str
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class ErrorResponse(ApiModel):
+    """Top-level error envelope."""
+
+    error: ErrorDetail
+
+
+def _envelope(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Build a serialized (camelCase) error envelope."""
+    body = ErrorResponse(error=ErrorDetail(code=code, message=message, details=details or {}))
+    return body.model_dump(by_alias=True)
+
+
+def error_json(
+    status_code: int, code: str, message: str, details: dict[str, Any] | None = None
+) -> JSONResponse:
+    """Construct a `JSONResponse` carrying the standard error envelope."""
+    return JSONResponse(status_code=status_code, content=_envelope(code, message, details))
+
+
+def register_exception_handlers(app: FastAPI) -> None:
+    """Attach handlers for validation, HTTP, and unexpected errors."""
+
+    @app.exception_handler(RequestValidationError)
+    async def _validation_handler(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        log.info("request_validation_error", errors=exc.errors())
+        return error_json(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            code="validation_error",
+            message="Request validation failed.",
+            details={"errors": exc.errors()},
+        )
+
+    @app.exception_handler(HTTPException)
+    async def _http_handler(request: Request, exc: HTTPException) -> JSONResponse:
+        return error_json(
+            exc.status_code,
+            code="http_error",
+            message=str(exc.detail),
+        )
+
+    @app.exception_handler(Exception)
+    async def _unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
+        log.exception("unhandled_exception")
+        return error_json(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            code="internal_error",
+            message="An unexpected error occurred.",
+        )
