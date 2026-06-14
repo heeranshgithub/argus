@@ -6,6 +6,7 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from starlette.requests import Request
 
 from app.config import Settings
+from app.db.collections import SESSIONS
 from app.logging_config import get_logger
 
 log = get_logger("db.mongo")
@@ -27,6 +28,7 @@ class MongoManager:
             settings.mongo_uri,
             serverSelectionTimeoutMS=PING_TIMEOUT_MS,
             uuidRepresentation="standard",
+            tz_aware=True,
         )
         self._db = self._client[settings.mongo_db_name]
         log.info("mongo_client_created", db=settings.mongo_db_name)
@@ -60,6 +62,14 @@ class MongoManager:
 
 # Single process-wide manager; the client itself is async-safe.
 mongo_manager = MongoManager()
+
+
+async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
+    """Create the indexes the app relies on. Idempotent — safe to call on every
+    startup; Mongo no-ops when an index already exists."""
+    await db[SESSIONS].create_index([("created_at", -1)], name="created_at_desc")
+    await db[SESSIONS].create_index([("status", 1)], name="status_asc")
+    log.info("mongo_indexes_ensured", collection=SESSIONS)
 
 
 def get_db(request: Request) -> AsyncIOMotorDatabase:

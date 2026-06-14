@@ -16,6 +16,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import Field
 
+from app.exceptions import InvalidObjectId, SessionNotFound
 from app.logging_config import get_logger
 from app.models.base import ApiModel
 
@@ -62,6 +63,24 @@ def register_exception_handlers(app: FastAPI) -> None:
             code="validation_error",
             message="Request validation failed.",
             details={"errors": exc.errors()},
+        )
+
+    @app.exception_handler(SessionNotFound)
+    async def _session_not_found_handler(
+        request: Request, exc: SessionNotFound
+    ) -> JSONResponse:
+        return error_json(
+            status.HTTP_404_NOT_FOUND,
+            code="session_not_found",
+            message=str(exc),
+        )
+
+    @app.exception_handler(InvalidObjectId)
+    async def _invalid_id_handler(request: Request, exc: InvalidObjectId) -> JSONResponse:
+        return error_json(
+            status.HTTP_400_BAD_REQUEST,
+            code="invalid_id",
+            message=str(exc),
         )
 
     @app.exception_handler(HTTPException)

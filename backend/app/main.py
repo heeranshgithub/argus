@@ -11,7 +11,7 @@ from app.api import health as health_routes
 from app.api.errors import register_exception_handlers
 from app.api.router import api_router
 from app.config import Settings, get_settings
-from app.db.mongo import MongoManager, mongo_manager
+from app.db.mongo import MongoManager, ensure_indexes, mongo_manager
 from app.logging_config import (
     REQUEST_ID_HEADER,
     RequestIDMiddleware,
@@ -30,6 +30,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     manager.connect(settings)
     if await manager.ping():
         log.info("mongo_connected", db=settings.mongo_db_name)
+        try:
+            await ensure_indexes(manager.db)
+        except Exception as exc:  # never block startup on indexing
+            log.warning("mongo_index_creation_failed", error=str(exc))
     else:
         log.warning("mongo_unreachable", uri=settings.mongo_uri)
 

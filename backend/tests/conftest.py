@@ -19,7 +19,7 @@ class FakeMongoManager(MongoManager):
         self._reachable = reachable
 
     def connect(self, settings: Settings) -> None:
-        client = AsyncMongoMockClient()
+        client = AsyncMongoMockClient(tz_aware=True)
         self._client = client
         self._db = client[settings.mongo_db_name]
 
