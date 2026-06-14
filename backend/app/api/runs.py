@@ -1,0 +1,162 @@
+"""Workflow run routes — start/resume runs, inspect timelines, stream events."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import AsyncIterator
+from typing import Annotated
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, Request, status
+from fastapi.responses import StreamingResponse
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
+from app.api.dependencies import get_workflow_deps
+from app.db.mongo import get_db
+from app.exceptions import RunNotFound
+from app.models.workflow import (
+    RunAccepted,
+    RunListResponse,
+    WorkflowRunOut,
+)
+from app.services import workflow_service
+from app.workflow.deps import WorkflowDeps
+from app.workflow.events import EventKind, WorkflowEvent, event_bus
+
+router = APIRouter(prefix="/sessions", tags=["runs"])
+
+DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
+DepsDep = Annotated[WorkflowDeps, Depends(get_workflow_deps)]
+
+# Kinds that terminate an SSE stream.
+_TERMINAL_KINDS = {EventKind.RUN_COMPLETED.value, EventKind.RUN_FAILED.value}
+# How long to wait for a live event before emitting an SSE heartbeat comment.
+_SSE_HEARTBEAT_SECONDS = 15.0
+
+
+@router.post(
+    "/{session_id}/run",
+    response_model=RunAccepted,
+    response_model_by_alias=True,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def start_run(
+    session_id: str,
+    db: DbDep,
+    deps: DepsDep,
+    background_tasks: BackgroundTasks,
+) -> RunAccepted:
+    """Kick off a workflow run for a session (202; runs in the background)."""
+    return await workflow_service.start_run(db, deps, session_id, background_tasks)
+
+
+@router.post(
+    "/{session_id}/run/resume",
+    response_model=RunAccepted,
+    response_model_by_alias=True,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def resume_run(
+    session_id: str,
+    db: DbDep,
+    deps: DepsDep,
+    background_tasks: BackgroundTasks,
+) -> RunAccepted:
+    """Resume a failed session's workflow from its last checkpoint (202)."""
+    return await workflow_service.resume_run(db, deps, session_id, background_tasks)
+
+
+@router.get(
+    "/{session_id}/runs",
+    response_model=RunListResponse,
+    response_model_by_alias=True,
+)
+async def list_runs(
+    session_id: str,
+    db: DbDep,
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    skip: Annotated[int, Query(ge=0)] = 0,
+) -> RunListResponse:
+    """List a session's runs, newest-first (summaries, without events)."""
+    items, total = await workflow_service.list_runs(db, session_id, limit=limit, skip=skip)
+    return RunListResponse(items=items, total=total)
+
+
+@router.get(
+    "/{session_id}/runs/{run_id}",
+    response_model=WorkflowRunOut,
+    response_model_by_alias=True,
+)
+async def get_run(session_id: str, run_id: str, db: DbDep) -> WorkflowRunOut:
+    """Fetch a single run including its full event timeline (for first paint)."""
+    return await workflow_service.get_run(db, session_id, run_id)
+
+
+@router.get("/{session_id}/runs/{run_id}/timeline", response_model=WorkflowRunOut)
+async def run_timeline(
+    session_id: str, run_id: str, db: DbDep, request: Request
+) -> WorkflowRunOut:
+    """Dev-only debug view of a run's full event list with payloads."""
+    settings = request.app.state.settings
+    if settings.env != "dev":
+        raise RunNotFound(run_id)  # hide the endpoint outside dev
+    return await workflow_service.get_run(db, session_id, run_id)
+
+
+def _sse_format(event: WorkflowEvent) -> str:
+    """Render a workflow event as a Server-Sent-Events frame (camelCase JSON)."""
+    from app.models.workflow import WorkflowEventOut
+
+    data = WorkflowEventOut.model_validate(event).model_dump(by_alias=True, mode="json")
+    return f"id: {event['seq']}\nevent: {event['kind']}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.get("/{session_id}/runs/{run_id}/events")
+async def stream_run_events(session_id: str, run_id: str, db: DbDep) -> StreamingResponse:
+    """Stream a run's events via SSE: stored backfill first, then live updates.
+
+    The contract is fixed here for Part 4; the frontend consumer is wired there.
+    Subscribing *before* reading backfill (and de-duplicating by ``seq``) closes
+    the race where an event lands between snapshot and subscription.
+    """
+    run = await workflow_service.get_run(db, session_id, run_id)  # 404 if absent
+
+    async def generator() -> AsyncIterator[str]:
+        queue = event_bus.subscribe(session_id)
+        sent: set[int] = set()
+        try:
+            # Backfill everything already recorded for this run.
+            for event in run.events:
+                sent.add(event.seq)
+                frame: WorkflowEvent = {
+                    "run_id": event.run_id,
+                    "session_id": event.session_id,
+                    "node": event.node,
+                    "kind": event.kind.value,
+                    "payload": event.payload,
+                    "ts": event.ts,
+                    "seq": event.seq,
+                }
+                yield _sse_format(frame)
+                if event.kind.value in _TERMINAL_KINDS:
+                    return  # run already finished; nothing live to wait for
+
+            # Then stream live events for this run until it terminates.
+            while True:
+                try:
+                    live = await asyncio.wait_for(
+                        queue.get(), timeout=_SSE_HEARTBEAT_SECONDS
+                    )
+                except TimeoutError:
+                    yield ": keep-alive\n\n"
+                    continue
+                if live["run_id"] != run_id or live["seq"] in sent:
+                    continue
+                sent.add(live["seq"])
+                yield _sse_format(live)
+                if live["kind"] in _TERMINAL_KINDS:
+                    return
+        finally:
+            event_bus.unsubscribe(session_id, queue)
+
+    return StreamingResponse(generator(), media_type="text/event-stream")

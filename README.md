@@ -10,9 +10,39 @@ report as context — all persisted.
 **Stack:** Next.js (App Router) + FastAPI + LangGraph + MongoDB.
 
 This repository is built in five sequential parts (`PLAN_PART_1.md` →
-`PLAN_PART_5.md`). **Part 1 (foundations & scaffolding) is complete**: both apps
-boot, talk to each other and to MongoDB, share a camelCase ↔ snake_case naming
-bridge, and have lint/test/typecheck wired up.
+`PLAN_PART_5.md`). **Parts 1–3 are complete:**
+
+- **Part 1** — foundations & scaffolding: both apps boot, talk to each other and
+  to MongoDB, share a camelCase ↔ snake_case naming bridge, lint/test/typecheck.
+- **Part 2** — sessions CRUD with Mongo persistence.
+- **Part 3** — the LangGraph workflow engine: a six-node graph
+  (`planner → researcher → signal_extractor → analyst → quality_check → reporter`)
+  with shared state, a conditional research loop, per-node retries, a Mongo-backed
+  checkpointer for resume-from-crash, an event timeline persisted per run, and a
+  generated nine-section research report. Drives OpenRouter (LLM gateway) + Tavily
+  (search) through swappable client protocols, so the whole graph runs offline
+  under pytest and against live providers from a script.
+
+### Part 3 workflow endpoints
+
+| Method & path | Purpose |
+|---|---|
+| `POST /api/sessions/{id}/run` | Start a workflow run (202, background) |
+| `POST /api/sessions/{id}/run/resume` | Resume a failed run from its last checkpoint |
+| `GET /api/sessions/{id}/runs` | List runs (newest-first) |
+| `GET /api/sessions/{id}/runs/{runId}` | One run with its full event timeline |
+| `GET /api/sessions/{id}/runs/{runId}/events` | SSE event stream (backfill + live) |
+| `GET /api/sessions/{id}/report` | The generated nine-section report |
+
+Run the workflow against **live** providers (requires `OPENROUTER_API_KEY`, and
+ideally `TAVILY_API_KEY`, in `backend/.env`):
+
+```bash
+cd backend
+uv run python scripts/run_workflow.py \
+    --company "Stripe" --website "https://stripe.com" \
+    --objective "Explore a payments partnership"
+```
 
 ---
 

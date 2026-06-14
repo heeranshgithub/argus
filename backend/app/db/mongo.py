@@ -6,7 +6,15 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from starlette.requests import Request
 
 from app.config import Settings
-from app.db.collections import SESSIONS
+from app.db.collections import (
+    ALL_COLLECTIONS,
+    REPORTS,
+    SESSIONS,
+    WORKFLOW_CHECKPOINT_BLOBS,
+    WORKFLOW_CHECKPOINT_WRITES,
+    WORKFLOW_CHECKPOINTS,
+    WORKFLOW_RUNS,
+)
 from app.logging_config import get_logger
 
 log = get_logger("db.mongo")
@@ -69,7 +77,40 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
     startup; Mongo no-ops when an index already exists."""
     await db[SESSIONS].create_index([("created_at", -1)], name="created_at_desc")
     await db[SESSIONS].create_index([("status", 1)], name="status_asc")
-    log.info("mongo_indexes_ensured", collection=SESSIONS)
+
+    # Workflow runs: list-by-session, newest-first.
+    await db[WORKFLOW_RUNS].create_index([("session_id", 1)], name="session_id_asc")
+    await db[WORKFLOW_RUNS].create_index([("started_at", -1)], name="started_at_desc")
+
+    # Reports: one per session for now.
+    await db[REPORTS].create_index([("session_id", 1)], name="session_id_unique", unique=True)
+
+    # Checkpointer collections (see app.workflow.checkpointer).
+    await db[WORKFLOW_CHECKPOINTS].create_index(
+        [("thread_id", 1), ("checkpoint_ns", 1), ("checkpoint_id", 1)],
+        name="checkpoint_pk",
+        unique=True,
+    )
+    await db[WORKFLOW_CHECKPOINTS].create_index(
+        [("thread_id", 1), ("ts", -1)], name="thread_ts_desc"
+    )
+    await db[WORKFLOW_CHECKPOINT_BLOBS].create_index(
+        [("thread_id", 1), ("checkpoint_ns", 1), ("channel", 1), ("version", 1)],
+        name="blob_pk",
+        unique=True,
+    )
+    await db[WORKFLOW_CHECKPOINT_WRITES].create_index(
+        [
+            ("thread_id", 1),
+            ("checkpoint_ns", 1),
+            ("checkpoint_id", 1),
+            ("task_id", 1),
+            ("idx", 1),
+        ],
+        name="write_pk",
+        unique=True,
+    )
+    log.info("mongo_indexes_ensured", collections=len(ALL_COLLECTIONS))
 
 
 def get_db(request: Request) -> AsyncIOMotorDatabase:

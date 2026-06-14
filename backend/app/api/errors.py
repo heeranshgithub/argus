@@ -16,7 +16,15 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import Field
 
-from app.exceptions import InvalidObjectId, SessionNotFound
+from app.exceptions import (
+    InvalidObjectId,
+    ReportNotFound,
+    RunNotFound,
+    SessionAlreadyRunning,
+    SessionNotFound,
+    SessionNotResumable,
+    WorkflowUnavailable,
+)
 from app.logging_config import get_logger
 from app.models.base import ApiModel
 
@@ -80,6 +88,46 @@ def register_exception_handlers(app: FastAPI) -> None:
         return error_json(
             status.HTTP_400_BAD_REQUEST,
             code="invalid_id",
+            message=str(exc),
+        )
+
+    @app.exception_handler(RunNotFound)
+    async def _run_not_found_handler(request: Request, exc: RunNotFound) -> JSONResponse:
+        return error_json(
+            status.HTTP_404_NOT_FOUND, code="run_not_found", message=str(exc)
+        )
+
+    @app.exception_handler(ReportNotFound)
+    async def _report_not_found_handler(
+        request: Request, exc: ReportNotFound
+    ) -> JSONResponse:
+        return error_json(
+            status.HTTP_404_NOT_FOUND, code="report_not_found", message=str(exc)
+        )
+
+    @app.exception_handler(SessionAlreadyRunning)
+    async def _already_running_handler(
+        request: Request, exc: SessionAlreadyRunning
+    ) -> JSONResponse:
+        return error_json(
+            status.HTTP_409_CONFLICT, code="session_already_running", message=str(exc)
+        )
+
+    @app.exception_handler(SessionNotResumable)
+    async def _not_resumable_handler(
+        request: Request, exc: SessionNotResumable
+    ) -> JSONResponse:
+        return error_json(
+            status.HTTP_409_CONFLICT, code="session_not_resumable", message=str(exc)
+        )
+
+    @app.exception_handler(WorkflowUnavailable)
+    async def _workflow_unavailable_handler(
+        request: Request, exc: WorkflowUnavailable
+    ) -> JSONResponse:
+        return error_json(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            code="workflow_unavailable",
             message=str(exc),
         )
 
