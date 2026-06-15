@@ -46,10 +46,10 @@ export function SessionCreateForm() {
   });
 
   return (
-    <Card className="w-full max-w-2xl">
+    <Card className="w-full">
       <CardHeader>
         <CardTitle className="font-display text-2xl font-extrabold tracking-tight">
-          New research session
+          Session brief
         </CardTitle>
         <CardDescription>
           Tell Argus who you&apos;re meeting and what you want to learn.
@@ -102,7 +102,12 @@ export function SessionCreateForm() {
             )}
           </div>
 
-          <Button type="submit" disabled={isLoading} className="self-start">
+          <Button
+            type="submit"
+            size="lg"
+            disabled={isLoading}
+            className="mt-1 w-full sm:w-auto sm:self-start sm:px-8"
+          >
             {isLoading && <Loader2 className="size-4 animate-spin" />}
             Create session
           </Button>
