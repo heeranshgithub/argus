@@ -54,6 +54,23 @@ class WorkflowEvent(TypedDict):
 RUN_NODE = "__run__"
 
 
+class CostCapExceeded(RuntimeError):
+    """Raised mid-run when accumulated LLM spend crosses the per-run soft cap.
+
+    Carries the stable error ``code`` the API/UI surface as a failed-run reason
+    (PLAN_PART_5 §2.1).
+    """
+
+    code = "cost_cap_exceeded"
+
+    def __init__(self, spent: float, cap: float) -> None:
+        self.spent = spent
+        self.cap = cap
+        super().__init__(
+            f"Run exceeded the cost cap: spent ${spent:.4f} of ${cap:.2f}."
+        )
+
+
 class EventBus:
     """In-process fan-out of run events to live SSE subscribers.
 
@@ -124,12 +141,28 @@ class RunContext:
     run_id: str
     session_id: str
     bus: EventBus | None = None
+    cost_cap_usd: float | None = None
+    cost_usd: float = 0.0
+    cost_exceeded: bool = False
     _seq: int = field(default=0)
 
     def next_seq(self) -> int:
         """Return the next monotonic sequence number for this run."""
         self._seq += 1
         return self._seq
+
+    def record_cost(self, amount: float | None) -> None:
+        """Accumulate an LLM call's cost and flag if the soft cap is crossed.
+
+        Deliberately does *not* raise — it's called from inside the (retrying)
+        LLM client, where an exception would trigger pointless re-calls. The cap
+        is enforced at the node boundary in :func:`emit_node` instead.
+        """
+        if not amount:
+            return
+        self.cost_usd += amount
+        if self.cost_cap_usd is not None and self.cost_usd > self.cost_cap_usd:
+            self.cost_exceeded = True
 
 
 _run_ctx: ContextVar[RunContext | None] = ContextVar("argus_run_ctx", default=None)
@@ -244,3 +277,9 @@ async def emit_node(node: str) -> AsyncIterator[NodeEmitter]:
             payload={**emitter.preview, "duration_ms": duration_ms},
             node_status=NodeStatus.DONE,
         )
+        # Enforce the per-run cost cap at the node boundary (PLAN_PART_5 §2.1).
+        # Checked here (not inside the retrying LLM client) so the run fails
+        # cleanly after the over-budget node rather than re-calling the model.
+        ctx = current_run_context()
+        if ctx.cost_exceeded:
+            raise CostCapExceeded(ctx.cost_usd, ctx.cost_cap_usd or 0.0)

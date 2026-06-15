@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     llm_model_analyst: str = "anthropic/claude-sonnet-4.6"
     llm_model_quality_check: str | None = None
     llm_model_reporter: str = "anthropic/claude-sonnet-4.6"
+    # Follow-up chat (PLAN_PART_5 §1); falls back to llm_model_default.
+    llm_model_chat: str | None = None
     # Comma-separated like cors_origins; parsed below into a list.
     llm_fallback_models_raw: str = Field(
         default="openai/gpt-4o-mini,google/gemini-2.5-flash",
@@ -60,10 +62,19 @@ class Settings(BaseSettings):
     workflow_max_research_iterations: int = 2
     workflow_node_retry_limit: int = 2
     workflow_recursion_limit: int = 30
+    # Per-run soft cost cap (USD). Exceeding it mid-run fails the run with
+    # ``cost_cap_exceeded`` (PLAN_PART_5 §2.1).
+    workflow_max_cost_usd: float = 1.0
     fetch_timeout_seconds: float = 8.0
     fetch_max_bytes: int = 1_000_000
     fetch_concurrency: int = 4
     search_results_per_query: int = 5
+
+    # --- Rate limiting (slowapi; disabled when env == "test") ------------------
+    rate_limit_default: str = "120/minute"
+    rate_limit_create_session: str = "30/minute"
+    rate_limit_run: str = "5/minute"
+    rate_limit_chat: str = "30/minute"
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -84,6 +95,24 @@ class Settings(BaseSettings):
             for slug in self.llm_fallback_models_raw.split(",")
             if slug.strip()
         ]
+
+    def redact(self) -> dict[str, str]:
+        """Return settings safe to log — secrets masked (PLAN_PART_5 §2.1).
+
+        Any field whose name hints at a secret is reduced to a presence marker so
+        config can be logged on startup without leaking keys.
+        """
+        secret_hints = ("key", "secret", "token", "password", "uri")
+        out: dict[str, str] = {}
+        for name in type(self).model_fields:
+            value = getattr(self, name)
+            if value is None:
+                out[name] = "<unset>"
+            elif any(hint in name.lower() for hint in secret_hints):
+                out[name] = "<set>" if value else "<unset>"
+            else:
+                out[name] = str(value)
+        return out
 
     def model_for_node(self, node: str) -> str:
         """Resolve the model slug for ``node``, falling back to the default.

@@ -5,10 +5,12 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChatTab } from "@/components/chat/chat-tab";
 import { ReportPanel } from "@/components/report/report-panel";
 import { RunControlPanel } from "@/components/workflow/run-control-panel";
 import { WorkflowProgress } from "@/components/workflow/workflow-progress";
 import { useRunStream } from "@/hooks/use-run-stream";
+import { scrollToSource } from "@/lib/citations";
 import { useGetLatestRunQuery } from "@/services/runs";
 import type { Session } from "@/types/session";
 
@@ -52,6 +54,19 @@ export function SessionWorkspace({ session }: { session: Session }) {
   );
 
   const viewReport = useCallback(() => setTab("report"), [setTab]);
+  const goToProgress = useCallback(() => setTab("progress"), [setTab]);
+
+  // Citation chip → switch to the Report tab, then scroll to the source card.
+  // The delay lets Radix mount the (previously inactive) tab content first.
+  const onCitation = useCallback(
+    (url: string) => {
+      setTab("report");
+      window.setTimeout(() => scrollToSource(url), 200);
+    },
+    [setTab],
+  );
+
+  const reportReady = stream.status === "completed";
 
   return (
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-[20rem_1fr]">
@@ -98,9 +113,12 @@ export function SessionWorkspace({ session }: { session: Session }) {
         </TabsContent>
 
         <TabsContent value="chat">
-          <p className="text-muted-foreground rounded-lg border border-dashed py-12 text-center text-sm">
-            Follow-up chat arrives in Part 5.
-          </p>
+          <ChatTab
+            sessionId={sessionId}
+            reportReady={reportReady}
+            onCitation={onCitation}
+            onGoToProgress={goToProgress}
+          />
         </TabsContent>
       </Tabs>
     </div>

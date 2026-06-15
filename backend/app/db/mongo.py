@@ -8,6 +8,7 @@ from starlette.requests import Request
 from app.config import Settings
 from app.db.collections import (
     ALL_COLLECTIONS,
+    CHAT_MESSAGES,
     REPORTS,
     SESSIONS,
     WORKFLOW_CHECKPOINT_BLOBS,
@@ -84,6 +85,11 @@ async def ensure_indexes(db: AsyncIOMotorDatabase) -> None:
 
     # Reports: one per session for now.
     await db[REPORTS].create_index([("session_id", 1)], name="session_id_unique", unique=True)
+
+    # Chat messages: history read by session, oldest-first (PLAN_PART_5 §1.2).
+    await db[CHAT_MESSAGES].create_index(
+        [("session_id", 1), ("created_at", 1)], name="session_created_asc"
+    )
 
     # Checkpointer collections (see app.workflow.checkpointer).
     await db[WORKFLOW_CHECKPOINTS].create_index(

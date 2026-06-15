@@ -5,6 +5,7 @@ import { useState } from "react";
 import { ExternalLink, Globe } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { sourceAnchorId } from "@/lib/citations";
 import { faviconUrl, hostOf } from "@/lib/url";
 import type { ReportSource } from "@/types/report";
 
@@ -15,10 +16,11 @@ export function SourceCard({ source }: { source: ReportSource }) {
 
   return (
     <a
+      id={sourceAnchorId(source.url)}
       href={source.url}
       target="_blank"
       rel="noreferrer"
-      className="group flex items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="group flex scroll-mt-24 items-start gap-3 rounded-lg border p-3 transition-[colors,box-shadow] hover:bg-accent focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
     >
       <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center overflow-hidden rounded">
         {favicon && !imgError ? (

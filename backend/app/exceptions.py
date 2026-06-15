@@ -64,3 +64,21 @@ class WorkflowUnavailable(AppError):
     def __init__(self, reason: str) -> None:
         self.reason = reason
         super().__init__(f"Workflow engine unavailable: {reason}")
+
+
+class ChatNoReport(AppError):
+    """Raised when chat is attempted before a session has a generated report."""
+
+    def __init__(self, session_id: str) -> None:
+        self.session_id = session_id
+        super().__init__(
+            f"Session {session_id!r} has no report yet; run research before chatting."
+        )
+
+
+class ChatMessageNotFound(AppError):
+    """Raised when a chat message id resolves to no document for the session."""
+
+    def __init__(self, message_id: str) -> None:
+        self.message_id = message_id
+        super().__init__(f"Chat message {message_id!r} was not found.")

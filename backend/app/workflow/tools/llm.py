@@ -16,6 +16,9 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import AsyncIterator, Callable
+from contextvars import ContextVar, Token
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar, overload, runtime_checkable
 
 from pydantic import BaseModel, ValidationError
@@ -43,9 +46,59 @@ class LLMError(Exception):
     """Raised when the LLM cannot produce valid output after retries."""
 
 
+# Optional sink for per-call cost (USD). The workflow runner binds this to the
+# run context's accumulator so spend can be capped per run (PLAN_PART_5 §2.1);
+# outside a run it stays unset and cost reporting is a no-op. Kept here (rather
+# than importing the events module) so this low-level tool has no upward deps.
+_cost_reporter: ContextVar[Callable[[float | None], None] | None] = ContextVar(
+    "argus_llm_cost_reporter", default=None
+)
+
+
+def set_cost_reporter(fn: Callable[[float | None], None]) -> Token[Any]:
+    """Bind a per-call cost sink for the current context; returns a reset token."""
+    return _cost_reporter.set(fn)
+
+
+def reset_cost_reporter(token: Token[Any]) -> None:
+    """Unbind a previously-set cost sink."""
+    _cost_reporter.reset(token)
+
+
+def _report_cost(amount: float | None) -> None:
+    fn = _cost_reporter.get()
+    if fn is not None:
+        fn(amount)
+
+
+@dataclass
+class StreamUsage:
+    """Mutable holder the caller passes to :meth:`LLMClient.stream` to receive
+    usage/cost once the stream is exhausted (chat analytics; see PLAN_PART_5 §1.2).
+    """
+
+    model: str | None = None
+    tokens_in: int | None = None
+    tokens_out: int | None = None
+    cost_usd: float | None = None
+
+
 @runtime_checkable
 class LLMClient(Protocol):
     """Completes a system+user prompt, optionally into a Pydantic model."""
+
+    def stream(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str | None = ...,
+        temperature: float = ...,
+        max_tokens: int = ...,
+        usage: StreamUsage | None = ...,
+        fallback_models: list[str] | None = ...,
+    ) -> AsyncIterator[str]:
+        """Stream a chat completion token-by-token from a full messages list."""
+        ...
 
     @overload
     async def complete(
@@ -230,6 +283,65 @@ class OpenRouterClient:
                     f"{response_model.__name__} validation failed after repair: {exc}"
                 ) from exc
 
+    async def stream(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str | None = None,
+        temperature: float = 0.3,
+        max_tokens: int = 1200,
+        usage: StreamUsage | None = None,
+        fallback_models: list[str] | None = None,
+    ) -> AsyncIterator[str]:
+        """Stream a chat completion, yielding content deltas as they arrive.
+
+        Used by follow-up chat (PLAN_PART_5 §1). Unlike :meth:`complete`, this is
+        a single attempt with no tenacity retry — a streaming generator can't be
+        transparently replayed, so the chat service handles failure by marking the
+        message ``failed``. ``usage`` (if given) is populated from the final chunk.
+        """
+        model = model or self._default_model
+        fallbacks = (
+            fallback_models if fallback_models is not None else self._default_fallbacks
+        )
+        extra_body: dict[str, Any] = {"usage": {"include": True}}
+        if fallbacks:
+            extra_body["models"] = fallbacks
+
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+            "stream_options": {"include_usage": True},
+            "extra_body": extra_body,
+        }
+        started = time.monotonic()
+        stream = await self._client.chat.completions.create(**kwargs)
+        final_model = model
+        async for chunk in stream:
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None and usage is not None:
+                usage.tokens_in = getattr(chunk_usage, "prompt_tokens", None)
+                usage.tokens_out = getattr(chunk_usage, "completion_tokens", None)
+                usage.cost_usd = getattr(chunk_usage, "cost", None)
+            if getattr(chunk, "model", None):
+                final_model = chunk.model
+            choices = getattr(chunk, "choices", None)
+            if not choices:
+                continue
+            text = getattr(choices[0].delta, "content", None)
+            if text:
+                yield text
+        if usage is not None:
+            usage.model = final_model
+        log.info(
+            "llm_stream",
+            model=final_model,
+            latency_ms=int((time.monotonic() - started) * 1000),
+        )
+
     @staticmethod
     def _parse(raw: str, response_model: type[BaseModel]) -> BaseModel:
         data = json.loads(_strip_fences(raw))
@@ -292,15 +404,25 @@ class OpenRouterClient:
         latency_ms = int((time.monotonic() - started) * 1000)
 
         usage = getattr(resp, "usage", None)
+        cost = getattr(usage, "cost", None)
         log.info(
             "llm_call",
             model=getattr(resp, "model", model),
             prompt_tokens=getattr(usage, "prompt_tokens", None),
             completion_tokens=getattr(usage, "completion_tokens", None),
-            cost_usd=getattr(usage, "cost", None),
+            cost_usd=cost,
             latency_ms=latency_ms,
             structured=response_format is not None,
         )
+        from app.metrics import metrics
+
+        metrics.add_llm_tokens(
+            getattr(usage, "prompt_tokens", None),
+            getattr(usage, "completion_tokens", None),
+        )
+        # Report cost only on success (failed attempts raise before here, so
+        # retries never double-count).
+        _report_cost(cost)
         content = resp.choices[0].message.content if resp.choices else None
         if not content:
             raise LLMError(f"Empty completion from model {model!r}.")
@@ -322,12 +444,16 @@ class FakeLLMClient:
         *,
         handler: Any | None = None,
         repeat_last: bool = True,
+        stream_texts: list[str] | None = None,
+        cost_per_call: float = 0.0,
     ) -> None:
         self._by_model: dict[str, list[Any]] = {
             k: list(v) for k, v in (by_model or {}).items()
         }
         self._handler = handler
         self._repeat_last = repeat_last
+        self._stream_texts: list[str] = list(stream_texts or [])
+        self._cost_per_call = cost_per_call
         self.calls: list[dict[str, Any]] = []
 
     @overload
@@ -363,6 +489,7 @@ class FakeLLMClient:
                 "response_model": response_model.__name__ if response_model else None,
             }
         )
+        _report_cost(self._cost_per_call)
         if self._handler is not None:
             return self._handler(system, user, response_model)
 
@@ -375,3 +502,30 @@ class FakeLLMClient:
         if response_model is not None and isinstance(value, dict):
             return response_model.model_validate(value)
         return value
+
+    async def stream(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str | None = None,
+        temperature: float = 0.3,
+        max_tokens: int = 1200,
+        usage: StreamUsage | None = None,
+        fallback_models: list[str] | None = None,
+    ) -> AsyncIterator[str]:
+        """Yield a scripted answer word-by-word; populate ``usage`` deterministically."""
+        self.calls.append({"messages": messages, "model": model, "stream": True})
+        if not self._stream_texts:
+            raise LLMError("FakeLLMClient has no scripted stream response.")
+        text = (
+            self._stream_texts.pop(0)
+            if len(self._stream_texts) > 1 or not self._repeat_last
+            else self._stream_texts[0]
+        )
+        for token in re.findall(r"\S+\s*", text):
+            yield token
+        if usage is not None:
+            usage.model = model or "fake/model"
+            usage.tokens_in = 128
+            usage.tokens_out = max(1, len(text.split()))
+            usage.cost_usd = 0.0

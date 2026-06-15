@@ -82,19 +82,46 @@ async def append_event(
 
 
 async def mark_completed(
-    db: AsyncIOMotorDatabase, run_id: str, *, final_state_keys: list[str]
+    db: AsyncIOMotorDatabase,
+    run_id: str,
+    *,
+    final_state_keys: list[str],
+    raw_sources: list[dict[str, Any]] | None = None,
 ) -> None:
-    """Mark a run completed and stamp ``finished_at``."""
+    """Mark a run completed and stamp ``finished_at``.
+
+    ``raw_sources`` (the fetched-and-cleaned source documents from the final
+    graph state) are persisted onto the run so follow-up chat can rank over them
+    (PLAN_PART_5 §1.3) without re-reading the LangGraph checkpoint blobs.
+    """
+    update: dict[str, Any] = {
+        "status": RunStatus.COMPLETED.value,
+        "finished_at": _utcnow_ms(),
+        "final_state_keys": final_state_keys,
+    }
+    if raw_sources is not None:
+        update["raw_sources"] = raw_sources
     await db[WORKFLOW_RUNS].update_one(
-        {"_id": _to_object_id(run_id)},
-        {
-            "$set": {
-                "status": RunStatus.COMPLETED.value,
-                "finished_at": _utcnow_ms(),
-                "final_state_keys": final_state_keys,
-            }
-        },
+        {"_id": _to_object_id(run_id)}, {"$set": update}
     )
+
+
+async def get_latest_raw_sources(
+    db: AsyncIOMotorDatabase, session_id: str
+) -> list[dict[str, Any]]:
+    """Return ``raw_sources`` from the session's most recent completed run.
+
+    Used by follow-up chat retrieval. Returns an empty list if no completed run
+    has sources yet.
+    """
+    doc = await db[WORKFLOW_RUNS].find_one(
+        {"session_id": session_id, "status": RunStatus.COMPLETED.value},
+        projection={"raw_sources": 1},
+        sort=[("finished_at", -1), ("_id", -1)],
+    )
+    if doc is None:
+        return []
+    return list(doc.get("raw_sources") or [])
 
 
 async def mark_failed(

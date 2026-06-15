@@ -54,7 +54,9 @@ async def resume_run(
 ) -> RunAccepted:
     """Resume a failed session's workflow from its last checkpoint."""
     session = await session_service.get_session(db, session_id)
-    if session.status is not SessionStatus.FAILED:
+    # Both failed and interrupted (graceful-shutdown) runs are resumable from the
+    # last checkpoint (PLAN_PART_5 §2.1).
+    if session.status not in (SessionStatus.FAILED, SessionStatus.INTERRUPTED):
         raise SessionNotResumable(session_id, session.status.value)
 
     runner = WorkflowRunner(db, deps)

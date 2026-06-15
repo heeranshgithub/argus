@@ -21,6 +21,9 @@ class SessionStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    # Set by graceful shutdown when a run is killed mid-flight; resumable from the
+    # last checkpoint, same as ``failed`` (PLAN_PART_5 §2.1).
+    INTERRUPTED = "interrupted"
 
 
 class SessionCreate(ApiModel):

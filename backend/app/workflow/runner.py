@@ -13,6 +13,7 @@ import traceback as traceback_mod
 from typing import TYPE_CHECKING, Any
 
 from app.logging_config import get_logger
+from app.metrics import metrics
 from app.models.session import SessionStatus
 from app.models.workflow import WorkflowError
 from app.repositories import session_repo, workflow_repo
@@ -26,6 +27,7 @@ from app.workflow.events import (
     event_bus,
 )
 from app.workflow.graph import build_graph
+from app.workflow.tools import llm as llm_tool
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -72,7 +74,16 @@ class WorkflowRunner:
         on any uncaught error marks the run + session ``failed`` (a later resume is
         allowed). On success marks both ``completed``.
         """
-        ctx = RunContext(db=self.db, run_id=run_id, session_id=session_id, bus=event_bus)
+        ctx = RunContext(
+            db=self.db,
+            run_id=run_id,
+            session_id=session_id,
+            bus=event_bus,
+            cost_cap_usd=self.settings.workflow_max_cost_usd,
+        )
+        # Route every LLM call's cost into this run's accumulator so the soft cap
+        # can be enforced at node boundaries (PLAN_PART_5 §2.1).
+        cost_token = llm_tool.set_cost_reporter(ctx.record_cost)
         async with bind_run_context(ctx):
             await emit(EventKind.RUN_STARTED, node=RUN_NODE, payload={"resume": resume})
             try:
@@ -80,6 +91,8 @@ class WorkflowRunner:
             except Exception as exc:
                 await self._fail(run_id, session_id, exc)
                 return
+            finally:
+                llm_tool.reset_cost_reporter(cost_token)
             await self._complete(run_id, session_id, final_state)
 
     async def _invoke(
@@ -114,10 +127,15 @@ class WorkflowRunner:
         self, run_id: str, session_id: str, final_state: dict[str, Any]
     ) -> None:
         """Mark a run + session completed and emit ``run_completed``."""
+        raw_sources = final_state.get("raw_sources") or []
         await workflow_repo.mark_completed(
-            self.db, run_id, final_state_keys=sorted(final_state.keys())
+            self.db,
+            run_id,
+            final_state_keys=sorted(final_state.keys()),
+            raw_sources=raw_sources,
         )
         await session_repo.update_status(self.db, session_id, SessionStatus.COMPLETED)
+        metrics.incr_workflow_run("completed")
         await emit(
             EventKind.RUN_COMPLETED,
             node=RUN_NODE,
@@ -127,13 +145,16 @@ class WorkflowRunner:
 
     async def _fail(self, run_id: str, session_id: str, exc: Exception) -> None:
         """Mark a run + session failed and emit ``run_failed``."""
+        # Prefer an exception's stable ``code`` (e.g. cost_cap_exceeded) over its
+        # class name so the UI's failed-run card shows a meaningful reason.
         error = WorkflowError(
-            code=type(exc).__name__,
+            code=getattr(exc, "code", type(exc).__name__),
             message=str(exc),
             traceback=traceback_mod.format_exc(limit=12),
         )
         await workflow_repo.mark_failed(self.db, run_id, error=error)
         await session_repo.update_status(self.db, session_id, SessionStatus.FAILED)
+        metrics.incr_workflow_run("failed")
         await emit(
             EventKind.RUN_FAILED,
             node=RUN_NODE,

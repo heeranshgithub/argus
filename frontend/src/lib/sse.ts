@@ -73,6 +73,11 @@ export function openEventStream(
 
   const connect = () => {
     if (closed) return;
+    // Don't hammer reconnects while offline; recheck shortly (PLAN §2.2).
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      timer = setTimeout(connect, 2000);
+      return;
+    }
     source = new EventSource(url());
     source.onopen = () => {
       retry = 0;
@@ -100,4 +105,107 @@ export function openEventStream(
     source?.close();
     source = null;
   };
+}
+
+export interface ChatDelta {
+  seq: number;
+  text: string;
+}
+
+export interface ChatDone {
+  messageId: string;
+  status: "complete" | "failed";
+  citations: import("@/types/chat").Citation[];
+  error: { code: string; message: string } | null;
+}
+
+export interface OpenChatStreamOptions {
+  onDelta: (delta: ChatDelta) => void;
+  onDone: (done: ChatDone) => void;
+  onOpen?: () => void;
+  onError?: (err: unknown) => void;
+  /** Resume point; only deltas with `seq > sinceSeq` are (re)delivered. */
+  sinceSeq?: number;
+}
+
+/**
+ * Open a resilient SSE stream for a chat reply (`event: delta` / `event: done`).
+ *
+ * Mirrors {@link openEventStream}'s `since_seq` resumability so a refresh
+ * mid-generation replays only un-seen token deltas. The `done` frame ends the
+ * stream (no reconnect after it). Returns an `unsubscribe()` that closes the
+ * stream and cancels any pending reconnect; safe to call during SSR.
+ */
+export function openChatStream(
+  baseUrl: string,
+  opts: OpenChatStreamOptions,
+): () => void {
+  if (typeof window === "undefined" || typeof EventSource === "undefined") {
+    return () => {};
+  }
+
+  let closed = false;
+  let source: EventSource | null = null;
+  let retry = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let lastSeq = opts.sinceSeq ?? 0;
+
+  const url = () => {
+    const u = new URL(baseUrl);
+    u.searchParams.set("since_seq", String(lastSeq));
+    return u.toString();
+  };
+
+  const close = () => {
+    closed = true;
+    if (timer) clearTimeout(timer);
+    source?.close();
+    source = null;
+  };
+
+  const onDelta = (ev: MessageEvent) => {
+    try {
+      const delta = JSON.parse(ev.data) as ChatDelta;
+      if (typeof delta.seq === "number") lastSeq = Math.max(lastSeq, delta.seq);
+      opts.onDelta(delta);
+    } catch {
+      // Ignore malformed frames.
+    }
+  };
+
+  const onDone = (ev: MessageEvent) => {
+    try {
+      opts.onDone(JSON.parse(ev.data) as ChatDone);
+    } catch {
+      // Ignore malformed frames.
+    }
+    close();
+  };
+
+  const connect = () => {
+    if (closed) return;
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      timer = setTimeout(connect, 2000);
+      return;
+    }
+    source = new EventSource(url());
+    source.onopen = () => {
+      retry = 0;
+      opts.onOpen?.();
+    };
+    source.addEventListener("delta", onDelta as EventListener);
+    source.addEventListener("done", onDone as EventListener);
+    source.onerror = (err) => {
+      if (closed) return;
+      opts.onError?.(err);
+      source?.close();
+      source = null;
+      const delay = Math.min(1000 * 2 ** retry, MAX_BACKOFF_MS);
+      retry += 1;
+      timer = setTimeout(connect, delay);
+    };
+  };
+
+  connect();
+  return close;
 }

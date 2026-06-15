@@ -11,12 +11,15 @@ from __future__ import annotations
 
 from typing import Any
 
+import structlog
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import Field
 
 from app.exceptions import (
+    ChatMessageNotFound,
+    ChatNoReport,
     InvalidObjectId,
     ReportNotFound,
     RunNotFound,
@@ -46,8 +49,17 @@ class ErrorResponse(ApiModel):
 
 
 def _envelope(code: str, message: str, details: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Build a serialized (camelCase) error envelope."""
-    body = ErrorResponse(error=ErrorDetail(code=code, message=message, details=details or {}))
+    """Build a serialized (camelCase) error envelope.
+
+    The active request id (bound by :class:`RequestIDMiddleware`) is folded into
+    ``details.requestId`` so a user-facing error is traceable to its server logs
+    (PLAN_PART_5 §2.1).
+    """
+    merged = dict(details or {})
+    request_id = structlog.contextvars.get_contextvars().get("request_id")
+    if request_id and "requestId" not in merged:
+        merged["requestId"] = request_id
+    body = ErrorResponse(error=ErrorDetail(code=code, message=message, details=merged))
     return body.model_dump(by_alias=True)
 
 
@@ -128,6 +140,24 @@ def register_exception_handlers(app: FastAPI) -> None:
         return error_json(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             code="workflow_unavailable",
+            message=str(exc),
+        )
+
+    @app.exception_handler(ChatNoReport)
+    async def _chat_no_report_handler(
+        request: Request, exc: ChatNoReport
+    ) -> JSONResponse:
+        return error_json(
+            status.HTTP_409_CONFLICT, code="chat_no_report", message=str(exc)
+        )
+
+    @app.exception_handler(ChatMessageNotFound)
+    async def _chat_message_not_found_handler(
+        request: Request, exc: ChatMessageNotFound
+    ) -> JSONResponse:
+        return error_json(
+            status.HTTP_404_NOT_FOUND,
+            code="chat_message_not_found",
             message=str(exc),
         )
 

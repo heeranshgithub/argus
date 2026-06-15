@@ -96,3 +96,45 @@ async def update_status(
         return_document=ReturnDocument.AFTER,
     )
     return to_session_out(doc) if doc is not None else None
+
+
+async def mark_running_interrupted(db: AsyncIOMotorDatabase) -> int:
+    """Flip every ``running`` session to ``interrupted`` (graceful shutdown).
+
+    Returns the number of sessions updated. Used by the FastAPI lifespan on
+    SIGTERM so in-flight runs land in a resumable terminal state (PLAN §2.1).
+    """
+    result = await db[SESSIONS].update_many(
+        {"status": SessionStatus.RUNNING.value},
+        {
+            "$set": {
+                "status": SessionStatus.INTERRUPTED.value,
+                "updated_at": _utcnow_ms(),
+            }
+        },
+    )
+    return int(result.modified_count)
+
+
+async def get_chat_suggestions(
+    db: AsyncIOMotorDatabase, session_id: str
+) -> list[str] | None:
+    """Return cached chat starter prompts for a session, or ``None``."""
+    oid = _to_object_id(session_id)
+    doc = await db[SESSIONS].find_one(
+        {"_id": oid}, projection={"chat_suggestions": 1}
+    )
+    if doc is None:
+        return None
+    cached = doc.get("chat_suggestions")
+    return list(cached) if cached else None
+
+
+async def set_chat_suggestions(
+    db: AsyncIOMotorDatabase, session_id: str, suggestions: list[str]
+) -> None:
+    """Cache chat starter prompts on the session document."""
+    oid = _to_object_id(session_id)
+    await db[SESSIONS].update_one(
+        {"_id": oid}, {"$set": {"chat_suggestions": suggestions}}
+    )

@@ -2,9 +2,10 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app import __version__
+from app.api.openrouter_health import check_openrouter
 from app.db.mongo import MongoManager
 from app.models.health import EchoRequest, EchoResponse, HealthResponse
 
@@ -18,13 +19,16 @@ def get_mongo_manager() -> MongoManager:
 
 @router.get("/health", response_model=HealthResponse)
 async def health(
+    request: Request,
     manager: Annotated[MongoManager, Depends(get_mongo_manager)],
 ) -> HealthResponse:
-    """Report process and Mongo connectivity."""
+    """Report process, Mongo, and OpenRouter connectivity."""
     mongo_ok = await manager.ping()
+    openrouter = await check_openrouter(request.app.state.settings)
     return HealthResponse(
         status="ok",
         mongo="ok" if mongo_ok else "down",
+        openrouter=openrouter,  # type: ignore[arg-type]
         version=__version__,
     )
 

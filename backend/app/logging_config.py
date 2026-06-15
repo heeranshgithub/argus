@@ -2,6 +2,7 @@
 
 import logging
 import sys
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 
@@ -9,6 +10,8 @@ import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+
+from app.metrics import metrics
 
 REQUEST_ID_HEADER = "X-Request-ID"
 
@@ -45,7 +48,13 @@ def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
-    """Attach a unique request id to the log context and response headers."""
+    """Bind a request id + route to the log context, time the request, and count it.
+
+    Every log emitted during the request carries ``request_id``, ``route``, and
+    ``method`` (PLAN_PART_5 §2.1); on completion a ``request_completed`` event
+    records ``status`` and ``latency_ms`` and the request is tallied in
+    :data:`app.metrics.metrics`.
+    """
 
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -54,16 +63,29 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
         structlog.contextvars.clear_contextvars()
         structlog.contextvars.bind_contextvars(
             request_id=request_id,
-            path=request.url.path,
+            route=request.url.path,
             method=request.method,
         )
         log = get_logger("request")
+        started = time.monotonic()
         try:
             response = await call_next(request)
         except Exception:
             log.exception("request_failed")
-            raise
-        finally:
+            metrics.incr_request(request.method, request.url.path, 500)
             structlog.contextvars.clear_contextvars()
+            raise
+        # Prefer the matched route template (set during routing) so metric
+        # cardinality stays bounded — e.g. ``/api/sessions/{session_id}``.
+        route_obj = request.scope.get("route")
+        route = getattr(route_obj, "path", request.url.path)
+        latency_ms = int((time.monotonic() - started) * 1000)
+        metrics.incr_request(request.method, route, response.status_code)
+        log.info(
+            "request_completed",
+            status=response.status_code,
+            latency_ms=latency_ms,
+        )
+        structlog.contextvars.clear_contextvars()
         response.headers[REQUEST_ID_HEADER] = request_id
         return response

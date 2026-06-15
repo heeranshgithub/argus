@@ -2,9 +2,10 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from app.api.rate_limit import create_session_limit, limiter
 from app.db.mongo import get_db
 from app.models.session import SessionCreate, SessionListResponse, SessionOut
 from app.services import session_service
@@ -20,7 +21,10 @@ DbDep = Annotated[AsyncIOMotorDatabase, Depends(get_db)]
     response_model_by_alias=True,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_session(payload: SessionCreate, db: DbDep) -> SessionOut:
+@limiter.limit(create_session_limit)
+async def create_session(
+    request: Request, payload: SessionCreate, db: DbDep
+) -> SessionOut:
     """Create a research session."""
     return await session_service.create_session(db, payload)
 

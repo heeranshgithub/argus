@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.api.dependencies import get_workflow_deps
+from app.api.rate_limit import limiter, run_limit
 from app.db.mongo import get_db
 from app.exceptions import RunNotFound
 from app.models.workflow import (
@@ -49,7 +50,9 @@ _SSE_HEADERS = {
     response_model_by_alias=True,
     status_code=status.HTTP_202_ACCEPTED,
 )
+@limiter.limit(run_limit)
 async def start_run(
+    request: Request,
     session_id: str,
     db: DbDep,
     deps: DepsDep,
@@ -65,7 +68,9 @@ async def start_run(
     response_model_by_alias=True,
     status_code=status.HTTP_202_ACCEPTED,
 )
+@limiter.limit(run_limit)
 async def resume_run(
+    request: Request,
     session_id: str,
     db: DbDep,
     deps: DepsDep,

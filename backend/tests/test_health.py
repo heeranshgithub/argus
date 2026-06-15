@@ -9,7 +9,12 @@ def test_health_ok(client: TestClient) -> None:
     resp = client.get("/api/health")
     assert resp.status_code == 200
     body = resp.json()
-    assert body == {"status": "ok", "mongo": "ok", "version": body["version"]}
+    assert body == {
+        "status": "ok",
+        "mongo": "ok",
+        "openrouter": "unknown",
+        "version": body["version"],
+    }
     assert body["version"]
 
 
