@@ -4,6 +4,10 @@
  * the matching history row as tokens arrive. A refresh mid-generation auto-resumes
  * the stream (it finds the persisted `streaming` message and reattaches with
  * `since_seq`), so reloading never loses or duplicates the reply.
+ *
+ * To make streaming visible without waiting for a history refetch, we keep
+ * optimistic placeholders for the just-sent user message and its assistant reply
+ * — tokens render against the placeholder until the real row arrives.
  */
 
 "use client";
@@ -30,6 +34,13 @@ export interface UseChatStreamResult {
   retry: () => Promise<void>;
 }
 
+interface Pending {
+  userId: string;
+  userContent: string;
+  assistantId: string;
+  createdAt: string;
+}
+
 export function useChatStream(
   sessionId: string,
   { enabled = true }: { enabled?: boolean } = {},
@@ -42,6 +53,7 @@ export function useChatStream(
 
   const [liveText, setLiveText] = useState<Record<string, string>>({});
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
   const closeRef = useRef<(() => void) | null>(null);
   const startedRef = useRef<Set<string>>(new Set());
 
@@ -64,6 +76,7 @@ export function useChatStream(
           })),
         onDone: (done) => {
           setActiveId(null);
+          setPending(null);
           if (done.status === "failed") {
             toastError("The assistant couldn't answer", {
               description: done.error?.message,
@@ -94,8 +107,17 @@ export function useChatStream(
     async (content: string) => {
       try {
         const { messageId } = await postChat({ sessionId, content }).unwrap();
-        await refetch();
+        // Start streaming immediately so tokens render without waiting on
+        // the history refetch. The optimistic placeholder below keeps the
+        // streamed text visible until the real row arrives.
+        setPending({
+          userId: `pending-user-${messageId}`,
+          userContent: content,
+          assistantId: messageId,
+          createdAt: new Date().toISOString(),
+        });
         beginStream(messageId, 0);
+        void refetch();
       } catch (e) {
         toastError("Couldn't send message", {
           description: toApiError(e).message,
@@ -115,21 +137,63 @@ export function useChatStream(
         sessionId,
         messageId: lastAssistant.id,
       }).unwrap();
-      await refetch();
       beginStream(messageId, 0);
+      void refetch();
     } catch (e) {
       toastError("Couldn't retry", { description: toApiError(e).message });
     }
   }, [items, retryChat, sessionId, refetch, beginStream]);
 
-  // Overlay live tokens onto the matching (still-streaming/empty) history row.
-  const messages: ChatMessage[] = items.map((m) => {
-    const live = liveText[m.id];
-    if (live != null && (m.status === "streaming" || !m.content)) {
-      return { ...m, content: live, status: "streaming" };
-    }
-    return m;
-  });
+  // Overlay live tokens onto the matching (still-streaming/empty) history row,
+  // and synthesize placeholders for the just-sent pair until refetch lands.
+  const messages: ChatMessage[] = useMemo(() => {
+    const overlaid = items.map((m) => {
+      const live = liveText[m.id];
+      if (live != null && (m.status === "streaming" || !m.content)) {
+        return { ...m, content: live, status: "streaming" as const };
+      }
+      return m;
+    });
+    if (!pending) return overlaid;
+    // Once the assistant row (real server id) lands, the user row is also in
+    // history — drop both optimistic placeholders. The assistant overlay above
+    // already streams tokens onto the real row.
+    const assistantLanded = overlaid.some((m) => m.id === pending.assistantId);
+    if (assistantLanded) return overlaid;
+    const extras: ChatMessage[] = [
+      {
+        id: pending.userId,
+        sessionId,
+        role: "user",
+        content: pending.userContent,
+        citations: [],
+        createdAt: pending.createdAt,
+        finishedAt: pending.createdAt,
+        status: "complete",
+        model: null,
+        tokensIn: null,
+        tokensOut: null,
+        costUsd: null,
+        error: null,
+      },
+      {
+        id: pending.assistantId,
+        sessionId,
+        role: "assistant",
+        content: liveText[pending.assistantId] ?? "",
+        citations: [],
+        createdAt: pending.createdAt,
+        finishedAt: null,
+        status: "streaming",
+        model: null,
+        tokensIn: null,
+        tokensOut: null,
+        costUsd: null,
+        error: null,
+      },
+    ];
+    return [...overlaid, ...extras];
+  }, [items, liveText, pending, sessionId]);
 
   return {
     messages,

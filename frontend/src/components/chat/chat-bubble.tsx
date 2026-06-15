@@ -3,6 +3,7 @@
 import { RotateCw } from "lucide-react";
 
 import { ChatCitations } from "@/components/chat/chat-citations";
+import { ChatMarkdown } from "@/components/chat/chat-markdown";
 import { formatClock } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { ChatMessage } from "@/types/chat";
@@ -23,8 +24,10 @@ function TypingDots() {
 
 /**
  * One chat message bubble — user (right, filled) or assistant (left, muted).
- * Shows a typing indicator while an empty assistant reply streams, citation
- * chips once it lands, and an inline Retry on a failed reply (PLAN §1.1).
+ * Assistant content is rendered as markdown (headings, lists, bold, links,
+ * code, tables); user content stays as plain text. A typing indicator shows
+ * while an empty assistant reply is being requested, a soft caret blinks at
+ * the tail of partial tokens, and a Retry button surfaces on failed replies.
  */
 export function ChatBubble({
   message,
@@ -38,25 +41,33 @@ export function ChatBubble({
   const isUser = message.role === "user";
   const streaming = message.status === "streaming";
   const failed = message.status === "failed";
+  const hasContent = Boolean(message.content);
 
   return (
     <div className={cn("flex flex-col gap-1", isUser ? "items-end" : "items-start")}>
       <div
         className={cn(
-          "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap break-words",
-          isUser ? "bg-primary text-primary-foreground" : "bg-muted",
+          "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm break-words",
+          isUser
+            ? "bg-primary whitespace-pre-wrap text-primary-foreground"
+            : "bg-muted text-foreground",
           failed && "bg-destructive/10 text-destructive",
         )}
       >
-        {message.content ? (
-          <>
-            {message.content}
-            {streaming && (
-              <span className="ml-0.5 inline-block animate-pulse" aria-hidden>
-                ▍
-              </span>
-            )}
-          </>
+        {hasContent ? (
+          isUser ? (
+            <>{message.content}</>
+          ) : (
+            <div className="relative">
+              <ChatMarkdown content={message.content} />
+              {streaming && (
+                <span
+                  className="ml-0.5 inline-block h-3.5 w-[2px] -translate-y-[1px] animate-pulse rounded-sm bg-foreground/70 align-middle"
+                  aria-hidden
+                />
+              )}
+            </div>
+          )
         ) : streaming ? (
           <TypingDots />
         ) : failed ? (
