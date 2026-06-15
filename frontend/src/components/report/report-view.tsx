@@ -28,7 +28,7 @@ export function ReportView({ report }: { report: Report }) {
   }
 
   return (
-    <div className="grid grid-cols-1 gap-8 xl:grid-cols-[1fr_12rem]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_13rem]">
       <article className="flex max-w-2xl flex-col gap-8">
         <header className="flex flex-wrap items-center justify-between gap-3 print:hidden">
           <p className="text-muted-foreground text-xs">

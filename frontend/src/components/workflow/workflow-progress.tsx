@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, WifiOff } from "lucide-react";
+import { Loader2, Sparkles, WifiOff } from "lucide-react";
 
 import { RunFailedCard } from "@/components/workflow/run-failed-card";
 import { WorkflowNodeCard } from "@/components/workflow/workflow-node-card";
@@ -20,9 +20,17 @@ export function WorkflowProgress({
 }) {
   if (!hasRun) {
     return (
-      <p className="text-muted-foreground rounded-lg border border-dashed py-12 text-center text-sm">
-        No run yet. Start the research to watch each step here.
-      </p>
+      <div className="flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border py-16 text-center">
+        <span className="flex size-12 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-primary/20">
+          <Sparkles className="size-6" aria-hidden />
+        </span>
+        <div className="flex flex-col gap-1">
+          <p className="font-display font-bold tracking-tight">Ready to run</p>
+          <p className="text-muted-foreground text-sm">
+            Start the research to watch each stage stream in live.
+          </p>
+        </div>
+      </div>
     );
   }
 

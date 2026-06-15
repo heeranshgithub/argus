@@ -4,6 +4,7 @@ import { FileText, Loader2, Play, RefreshCw, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { RunFailedCard } from "@/components/workflow/run-failed-card";
 import { useElapsed } from "@/hooks/use-elapsed";
 import type { RunView } from "@/hooks/use-run-state";
@@ -73,12 +74,22 @@ export function RunControlPanel({
   }
 
   if (running) {
+    const pct = Math.round((doneCount / TOTAL_NODES) * 100);
     return (
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-3">
         <Button disabled className="w-full">
           <Loader2 className="size-4 animate-spin" aria-hidden />
-          Running… ({doneCount} of {TOTAL_NODES} nodes)
+          Researching…
         </Button>
+        <div className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between text-xs font-medium">
+            <span className="text-foreground tabular-nums">
+              {doneCount} / {TOTAL_NODES} stages
+            </span>
+            <span className="text-muted-foreground tabular-nums">{pct}%</span>
+          </div>
+          <Progress value={pct} />
+        </div>
         <p className="text-muted-foreground text-center text-xs tabular-nums">
           Elapsed {formatDuration(elapsed)}
         </p>

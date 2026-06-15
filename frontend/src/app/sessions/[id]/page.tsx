@@ -37,18 +37,18 @@ export default function SessionDetailPage() {
     <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-10">
       <Link
         href="/sessions"
-        className="mb-6 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+        className="mb-6 inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
       >
         <ArrowLeft className="size-4" />
         Back to sessions
       </Link>
 
       {isLoading ? (
-        <div className="flex flex-col gap-6">
-          <Skeleton className="h-28 w-full" />
+        <div className="flex flex-col gap-8">
+          <Skeleton className="h-44 w-full rounded-2xl" />
           <div className="grid gap-8 lg:grid-cols-[20rem_1fr]">
-            <Skeleton className="h-40 w-full" />
-            <Skeleton className="h-64 w-full" />
+            <Skeleton className="h-44 w-full rounded-2xl" />
+            <Skeleton className="h-64 w-full rounded-2xl" />
           </div>
         </div>
       ) : error ? (

@@ -2,6 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Activity, FileText, MessagesSquare, Sparkles } from "lucide-react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -71,9 +72,16 @@ export function SessionWorkspace({ session }: { session: Session }) {
   return (
     <div className="grid grid-cols-1 gap-8 lg:grid-cols-[20rem_1fr]">
       {/* Left: run controls (sticky on desktop). */}
-      <aside className="lg:sticky lg:top-8 lg:self-start">
-        <div className="flex flex-col gap-3 rounded-lg border p-4">
-          <h2 className="text-sm font-semibold">Research run</h2>
+      <aside className="lg:sticky lg:top-24 lg:self-start">
+        <div className="flex flex-col gap-4 rounded-2xl border border-border bg-card p-5 shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
+              <Sparkles className="size-4" />
+            </span>
+            <h2 className="font-display text-sm font-bold uppercase tracking-widest text-muted-foreground">
+              Research run
+            </h2>
+          </div>
           {latestLoading ? (
             <Skeleton className="h-9 w-full" />
           ) : (
@@ -90,10 +98,19 @@ export function SessionWorkspace({ session }: { session: Session }) {
 
       {/* Right: tabbed work area. */}
       <Tabs value={tab} onValueChange={setTab} className="min-w-0">
-        <TabsList className="w-full sm:w-auto">
-          <TabsTrigger value="progress">Progress</TabsTrigger>
-          <TabsTrigger value="report">Report</TabsTrigger>
-          <TabsTrigger value="chat">Chat</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3 sm:inline-flex sm:w-auto">
+          <TabsTrigger value="progress">
+            <Activity className="size-4" />
+            Progress
+          </TabsTrigger>
+          <TabsTrigger value="report">
+            <FileText className="size-4" />
+            Report
+          </TabsTrigger>
+          <TabsTrigger value="chat">
+            <MessagesSquare className="size-4" />
+            Chat
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="progress">

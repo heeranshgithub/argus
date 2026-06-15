@@ -50,11 +50,11 @@ export function WorkflowNodeCard({
       <div className="flex flex-col items-center">
         <span
           className={cn(
-            "flex size-9 shrink-0 items-center justify-center rounded-full border",
+            "flex size-9 shrink-0 items-center justify-center rounded-full border transition-colors",
             running &&
-              "border-blue-500/40 bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+              "border-amber-500/40 bg-amber-100 text-amber-800 ring-4 ring-amber-500/10 dark:bg-amber-950/60 dark:text-amber-300",
             node.status === "done" &&
-              "border-emerald-500/40 bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300",
+              "border-primary/40 bg-primary/15 text-primary dark:bg-primary/20",
             failed &&
               "border-red-500/40 bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
             node.status === "pending" && "bg-muted text-muted-foreground",
@@ -67,17 +67,26 @@ export function WorkflowNodeCard({
             aria-hidden
             className={cn(
               "mt-1 w-px flex-1 bg-border",
+              node.status === "done" && "bg-primary/30",
               nextRunning &&
-                "animate-pulse bg-blue-400 motion-reduce:animate-none",
+                "animate-pulse bg-amber-400 motion-reduce:animate-none",
             )}
           />
         )}
       </div>
 
       {/* Right: content card */}
-      <div className="mb-4 flex-1 rounded-lg border p-4">
+      <div
+        className={cn(
+          "mb-4 flex-1 rounded-xl border p-4 transition-colors",
+          running && "border-amber-500/30 bg-amber-500/[0.04]",
+          node.status === "done" && "bg-card",
+          failed && "border-destructive/30 bg-destructive/[0.03]",
+          node.status === "pending" && "border-dashed opacity-80",
+        )}
+      >
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="font-medium">{meta.label}</h3>
+          <h3 className="font-display font-bold tracking-tight">{meta.label}</h3>
           {node.iterations > 1 && (
             <Badge variant="outline" className="text-xs">
               iteration {node.iterations}
