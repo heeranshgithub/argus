@@ -46,27 +46,33 @@ export function ChatTab({
     chat.messages.length === 0 &&
     (suggestions?.suggestions.length ?? 0) > 0;
 
+  const hasContent = chat.isLoading || chat.messages.length > 0;
+
   return (
-    <div className="flex min-h-[28rem] flex-col gap-4">
-      <div className="flex-1">
-        {chat.isLoading ? (
-          <div className="flex flex-col gap-3">
-            <Skeleton className="h-12 w-2/3" />
-            <Skeleton className="ml-auto h-12 w-1/2" />
-          </div>
-        ) : chat.messages.length ? (
-          <ChatMessageList
-            messages={chat.messages}
-            onCite={onCitation}
-            onRetry={() => void chat.retry()}
-          />
-        ) : (
-          <p className="text-muted-foreground py-8 text-center text-sm">
-            Ask anything about this company — answers are grounded in the report
-            with citations.
-          </p>
-        )}
-      </div>
+    <div className="flex flex-col gap-4">
+      {/* Only grow the message area when there's actual content — otherwise
+          the empty hint, prompts, and composer sit together with no gap. */}
+      {hasContent ? (
+        <div className="min-h-[16rem]">
+          {chat.isLoading ? (
+            <div className="flex flex-col gap-3">
+              <Skeleton className="h-12 w-2/3" />
+              <Skeleton className="ml-auto h-12 w-1/2" />
+            </div>
+          ) : (
+            <ChatMessageList
+              messages={chat.messages}
+              onCite={onCitation}
+              onRetry={() => void chat.retry()}
+            />
+          )}
+        </div>
+      ) : (
+        <p className="text-muted-foreground pt-2 text-center text-sm">
+          Ask anything about this company — answers are grounded in the report
+          with citations.
+        </p>
+      )}
 
       {showSuggestions && (
         <ChatSuggestedPrompts
