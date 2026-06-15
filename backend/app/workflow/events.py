@@ -19,6 +19,7 @@ just before invocation is visible to every node.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import traceback as traceback_mod
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -57,14 +58,17 @@ class EventBus:
     """In-process fan-out of run events to live SSE subscribers.
 
     Subscribers register a queue per session id; publishers push to every queue
-    registered for that session. Bounded queues drop nothing here — consumers are
-    expected to drain promptly — but a slow/disconnected consumer is tolerated:
-    ``publish`` swallows ``QueueFull`` so it never blocks the workflow.
+    registered for that session. Queues are bounded (``max_queue``); a slow or
+    stalled consumer never blocks the workflow — on overflow the *oldest* queued
+    event is evicted to make room for the newest, ``dropped_events`` is bumped,
+    and a structlog warning fires. The durable record in ``workflow_runs.events``
+    is unaffected, so a reconnect with ``since_seq`` recovers anything dropped.
     """
 
-    def __init__(self, *, max_queue: int = 1000) -> None:
+    def __init__(self, *, max_queue: int = 512) -> None:
         self._subscribers: dict[str, set[asyncio.Queue[WorkflowEvent]]] = {}
         self._max_queue = max_queue
+        self.dropped_events = 0
 
     def subscribe(self, session_id: str) -> asyncio.Queue[WorkflowEvent]:
         """Register and return a new queue for ``session_id``."""
@@ -82,12 +86,26 @@ class EventBus:
             self._subscribers.pop(session_id, None)
 
     def publish(self, session_id: str, event: WorkflowEvent) -> None:
-        """Push ``event`` to every live subscriber for ``session_id``."""
+        """Push ``event`` to every live subscriber for ``session_id``.
+
+        Drop-oldest on overflow so live consumers always trend toward the newest
+        events; dropped ones stay recoverable from Mongo via ``since_seq``.
+        """
         for queue in self._subscribers.get(session_id, set()):
+            if queue.full():
+                with contextlib.suppress(asyncio.QueueEmpty):
+                    queue.get_nowait()  # evict the oldest to make room
+                self.dropped_events += 1
+                log.warning(
+                    "event_queue_overflow",
+                    session_id=session_id,
+                    seq=event["seq"],
+                    dropped_events=self.dropped_events,
+                )
             try:
                 queue.put_nowait(event)
-            except asyncio.QueueFull:  # pragma: no cover - slow consumer
-                log.warning("event_queue_full", session_id=session_id)
+            except asyncio.QueueFull:  # pragma: no cover - concurrent producers
+                self.dropped_events += 1
 
     def subscriber_count(self, session_id: str) -> int:
         """Number of live subscribers for a session (used in tests)."""

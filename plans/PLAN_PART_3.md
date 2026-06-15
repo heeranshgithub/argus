@@ -250,24 +250,42 @@ All on the wire as camelCase via the `ApiModel` base from Part 1. Stored snake_c
 
 ## 6. Checkpointer (`workflow/checkpointer.py`)
 
-Mongo collection `workflow_checkpoints`:
+> **Implementation note (deviation from original single-collection sketch).**
+> No `langgraph-checkpoint-mongodb` package exists for LangGraph 1.x, so the
+> custom `BaseCheckpointSaver` is the default plan (as anticipated below). During
+> implementation the storage was split across **three** collections instead of
+> embedding `channel_values` / `pending_writes` inside one checkpoint document.
+> Reason: LangGraph addresses channel **blobs** by `(thread, ns, channel,
+> version)` *independently of any single checkpoint* — a later checkpoint reuses
+> an earlier checkpoint's blob for any channel it didn't rewrite. Embedding blobs
+> per-checkpoint would break that cross-step reuse (and bloat each snapshot), so
+> blobs and writes get their own collections, mirroring LangGraph's own
+> Postgres/SQLite savers.
+
+Three Mongo collections:
+
 ```
-{
-  thread_id: str,          # = session_id
-  checkpoint_id: str,
-  parent_checkpoint_id: str | null,
-  ts: datetime,
-  channel_values: bson,    # the state snapshot
-  channel_versions: bson,
-  pending_writes: bson
-}
+# workflow_checkpoints — one doc per checkpoint (+ its metadata)
+{ thread_id, checkpoint_ns, checkpoint_id, parent_checkpoint_id, ts,
+  type, checkpoint: BinData, metadata_type, metadata: BinData }
+
+# workflow_checkpoint_blobs — one doc per channel value, keyed by version
+{ thread_id, checkpoint_ns, channel, version, type, blob: BinData }
+
+# workflow_checkpoint_writes — pending writes (intermediate task outputs)
+{ thread_id, checkpoint_ns, checkpoint_id, task_id, idx, channel,
+  type, blob: BinData, task_path }
 ```
 
-- Implements `BaseCheckpointSaver` interface: `aput`, `aget`, `alist`, `aput_writes`.
-- Indexed on `(thread_id, ts desc)`.
-- BSON-safe serialization (msgpack inside a BinData field; avoids Pydantic ObjectId pitfalls).
+- Implements the `BaseCheckpointSaver` async interface: `aget_tuple`, `alist`,
+  `aput`, `aput_writes` (plus `adelete_thread`). The sync methods raise — the
+  graph runs async-only.
+- Indexes: unique `(thread_id, checkpoint_ns, checkpoint_id)`,
+  `(thread_id, ts desc)`, unique blob/write keys (see `ensure_indexes`).
+- BSON-safe serialization via LangGraph's own `serde` (msgpack → `bytes`) stored
+  as BSON `Binary`; `ObjectId`/Pydantic never enter the checkpoint path.
 
-If `langgraph-checkpoint-mongodb` exists for our LangGraph version, use it instead and skip writing this from scratch — but verify it actually works async and supports our state types. Decide at implementation time.
+If `langgraph-checkpoint-mongodb` exists for our LangGraph version, use it instead and skip writing this from scratch — but verify it actually works async and supports our state types. Decide at implementation time. *(Resolved: it does not exist for 1.x; custom saver shipped.)*
 
 ---
 
@@ -325,8 +343,9 @@ final_state_keys: [str]      # for debugging without dumping full state
 ```
 Indexes: `session_id: 1`, `started_at: -1`.
 
-### `workflow_checkpoints`
-See §6.
+### `workflow_checkpoints` (+ `workflow_checkpoint_blobs`, `workflow_checkpoint_writes`)
+Checkpointer storage — three collections, not one. See §6 for the schema and the
+rationale for splitting blobs/writes out of the checkpoint document.
 
 ### `reports`
 ```
@@ -376,9 +395,15 @@ class LLMClient(Protocol):
 - Optional `HTTP-Referer` and `X-Title` headers (OpenRouter convention) set to identify Argus in their dashboard.
 
 **Structured output handling.** Not all models behind OpenRouter support `response_format={"type": "json_schema"}`. The client tries in this order:
-1. If the model is known to support strict JSON schema (OpenAI 4o+, Anthropic via tool-use, Gemini 2.x) → use native structured output.
-2. Otherwise → append a "Respond ONLY with JSON matching this schema: …" instruction and parse + Pydantic-validate the response.
-3. On Pydantic validation failure → one retry with the error message included in the prompt ("Your previous response failed validation: …. Fix it.").
+1. If the model is known to support strict JSON schema (slug prefix `openai/` or `google/gemini`) → use **native** structured output: `response_format={"type":"json_schema","json_schema":{...,"strict":True}}`. Pydantic's schema is hardened for OpenAI strict mode first (`_to_strict_schema`): every object gets `additionalProperties: false` and all properties marked `required`, and `default` keys are stripped, recursively through `$defs`.
+2. Otherwise (e.g. `anthropic/*`) → `response_format={"type":"json_object"}` **plus** the JSON Schema embedded in the system prompt, then parse + Pydantic-validate.
+3. On parse/validation failure (either path) → one repair retry with the error message included in the prompt ("Your previous response failed validation: …. Return ONLY corrected JSON that is an instance of the schema.").
+
+> **Implementation note (this design was forced by the live smoke run, not the unit tests).** The first cut used only path 2 (JSON mode + schema-in-prompt) for *all* models. Mocked tests passed, but the live run exposed two failures the fakes couldn't:
+> - **`gpt-4o-mini` echoed the schema** (returned `{"description": ..., "properties": {...}}`) instead of an instance, even under JSON mode, and the repair retry didn't recover it. → Fixed by adding the native strict-schema path (step 1), which enforces the exact shape server-side.
+> - **The reporter's output was truncated** mid-JSON because the full report (with ~26 sources) exceeded the 2000-token default → invalid JSON. → Fixed by (a) raising `max_tokens` for the heavy nodes (`reporter` 4000, `analyst` 3000) and (b) instructing the reporter to return an empty `sources` array — the node rebuilds `sources` deterministically from `raw_sources` ranked by evidence usage anyway, so the model never needs to emit them.
+>
+> Lesson captured for later parts: **structured-output adherence and token budgets must be validated against real providers**, not just `FakeLLMClient`.
 
 **Retry & metrics.** 3 attempts with exp backoff (1s, 2s, 4s) on 429/5xx/timeout. Every call emits a structlog event with `model`, `prompt_tokens`, `completion_tokens`, `cost_usd` (OpenRouter returns it in the response), `latency_ms`, `node`, `session_id`, `run_id`.
 
@@ -407,7 +432,7 @@ class SearchHit(TypedDict):
 
 ```
 # OpenRouter — single LLM gateway
-openrouter_api_key: str
+openrouter_api_key: str | None = None        # optional at Settings level; see note below
 openrouter_base_url: str = 'https://openrouter.ai/api/v1'
 openrouter_app_title: str = 'Argus Research Copilot'
 openrouter_app_url: str | None = None       # sent as HTTP-Referer
@@ -434,7 +459,13 @@ fetch_timeout_seconds: float = 8.0
 fetch_max_bytes: int = 1_000_000
 ```
 
-All read from env. Validated at startup; missing `openrouter_api_key` fails fast with a clear error. Model slugs are validated lazily on first use (OpenRouter returns a clear 404 for unknown models).
+All read from env. Model slugs are validated lazily on first use (OpenRouter returns a clear 404 for unknown models).
+
+> **Implementation note (deviation: where "fail fast" lives).** The original plan declared `openrouter_api_key: str` (required) and said a missing key "fails fast at startup." In practice the key is **optional on the `Settings` model** (`str | None = None`) and the fail-fast moved *down* to `OpenRouterClient` construction, which raises `LLMError` with a clear message when the key is absent. Rationale:
+> - A required field would make `Settings()` itself throw, breaking the **test suite** (which never sets a real key) and the unrelated **health/sessions** routes, which don't need an LLM.
+> - Construction is **lazy** anyway: `get_workflow_deps` builds the real client on the first workflow request and caches it on `app.state`; a missing key surfaces there as a domain `WorkflowUnavailable` → **HTTP 503** with the standard error envelope, only on workflow routes.
+>
+> Net effect matches the plan's intent ("clear error when misconfigured") while keeping the rest of the app and the offline test suite runnable without any provider credentials.
 
 ---
 

@@ -17,6 +17,7 @@ from app.exceptions import RunNotFound
 from app.models.workflow import (
     RunAccepted,
     RunListResponse,
+    RunStatus,
     WorkflowRunOut,
 )
 from app.services import workflow_service
@@ -30,8 +31,16 @@ DepsDep = Annotated[WorkflowDeps, Depends(get_workflow_deps)]
 
 # Kinds that terminate an SSE stream.
 _TERMINAL_KINDS = {EventKind.RUN_COMPLETED.value, EventKind.RUN_FAILED.value}
+# Run statuses that mean the timeline is already complete in the backfill.
+_TERMINAL_STATUSES = {RunStatus.COMPLETED, RunStatus.FAILED}
 # How long to wait for a live event before emitting an SSE heartbeat comment.
 _SSE_HEARTBEAT_SECONDS = 15.0
+# Headers that keep SSE flowing through proxies (disable buffering + caching).
+_SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
 
 
 @router.post(
@@ -112,12 +121,21 @@ def _sse_format(event: WorkflowEvent) -> str:
 
 
 @router.get("/{session_id}/runs/{run_id}/events")
-async def stream_run_events(session_id: str, run_id: str, db: DbDep) -> StreamingResponse:
+async def stream_run_events(
+    session_id: str,
+    run_id: str,
+    db: DbDep,
+    request: Request,
+    since_seq: Annotated[int, Query(ge=0)] = 0,
+) -> StreamingResponse:
     """Stream a run's events via SSE: stored backfill first, then live updates.
 
-    The contract is fixed here for Part 4; the frontend consumer is wired there.
-    Subscribing *before* reading backfill (and de-duplicating by ``seq``) closes
-    the race where an event lands between snapshot and subscription.
+    ``since_seq`` is the keystone for refresh + reconnect (PLAN_PART_4 §1): the
+    backfill replays only events with ``seq > since_seq``, and the live loop
+    drops anything at-or-below it. Subscribing *before* reading backfill (and
+    de-duplicating by ``seq``) closes the race where an event lands between the
+    snapshot and the subscription. The handler also exits cleanly when the
+    client disconnects, so an abandoned stream doesn't leak a subscriber.
     """
     run = await workflow_service.get_run(db, session_id, run_id)  # 404 if absent
 
@@ -125,8 +143,10 @@ async def stream_run_events(session_id: str, run_id: str, db: DbDep) -> Streamin
         queue = event_bus.subscribe(session_id)
         sent: set[int] = set()
         try:
-            # Backfill everything already recorded for this run.
+            # Backfill events the client hasn't seen yet (seq > since_seq).
             for event in run.events:
+                if event.seq <= since_seq:
+                    continue
                 sent.add(event.seq)
                 frame: WorkflowEvent = {
                     "run_id": event.run_id,
@@ -138,11 +158,17 @@ async def stream_run_events(session_id: str, run_id: str, db: DbDep) -> Streamin
                     "seq": event.seq,
                 }
                 yield _sse_format(frame)
-                if event.kind.value in _TERMINAL_KINDS:
-                    return  # run already finished; nothing live to wait for
 
-            # Then stream live events for this run until it terminates.
+            # If the run already finished, its terminal event is in the backfill
+            # (or was below since_seq) — close now instead of waiting on a queue
+            # that will never receive anything.
+            if run.status in _TERMINAL_STATUSES:
+                return
+
+            # Otherwise stream live events for this run until it terminates.
             while True:
+                if await request.is_disconnected():
+                    return
                 try:
                     live = await asyncio.wait_for(
                         queue.get(), timeout=_SSE_HEARTBEAT_SECONDS
@@ -150,7 +176,11 @@ async def stream_run_events(session_id: str, run_id: str, db: DbDep) -> Streamin
                 except TimeoutError:
                     yield ": keep-alive\n\n"
                     continue
-                if live["run_id"] != run_id or live["seq"] in sent:
+                if (
+                    live["run_id"] != run_id
+                    or live["seq"] <= since_seq
+                    or live["seq"] in sent
+                ):
                     continue
                 sent.add(live["seq"])
                 yield _sse_format(live)
@@ -159,4 +189,6 @@ async def stream_run_events(session_id: str, run_id: str, db: DbDep) -> Streamin
         finally:
             event_bus.unsubscribe(session_id, queue)
 
-    return StreamingResponse(generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        generator(), media_type="text/event-stream", headers=_SSE_HEADERS
+    )
