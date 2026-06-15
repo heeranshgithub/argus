@@ -1,6 +1,6 @@
-import { Eye } from "lucide-react";
 import Link from "next/link";
 
+import { OrigamiBird } from "@/components/icons/origami-bird";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 export function TopNav() {
@@ -13,7 +13,7 @@ export function TopNav() {
           aria-label="Argus home"
         >
           <span className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm transition-transform group-hover:-rotate-6">
-            <Eye className="size-4.5" />
+            <OrigamiBird className="size-4.5" />
           </span>
           <span className="font-display text-xl font-extrabold tracking-tight">
             <span className="text-primary">/</span>argus
