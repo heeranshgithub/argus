@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Archivo, Geist, Geist_Mono } from "next/font/google";
 
 import { Providers } from "@/app/providers";
 import { TopNav } from "@/components/top-nav";
@@ -16,6 +16,13 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+// Heavy editorial grotesk for display headings.
+const archivo = Archivo({
+  variable: "--font-archivo",
+  subsets: ["latin"],
+  weight: ["600", "700", "800", "900"],
+});
+
 export const metadata: Metadata = {
   title: "Argus — AI Research Copilot",
   description: "Research a company and generate a structured meeting briefing.",
@@ -29,7 +36,8 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
+      className={`${geistSans.variable} ${geistMono.variable} ${archivo.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <Providers>

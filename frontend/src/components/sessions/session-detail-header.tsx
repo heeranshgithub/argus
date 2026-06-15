@@ -8,7 +8,7 @@ export function SessionDetailHeader({ session }: { session: Session }) {
   return (
     <div className="flex flex-col gap-3 border-b pb-6">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="font-display text-3xl font-extrabold tracking-tight">
           {session.companyName}
         </h1>
         <StatusBadge status={session.status} />

@@ -3,73 +3,79 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Palette: warm cream paper + forest green, an editorial B2B aesthetic.
+ * Light is the default; dark is a deep green-tinted charcoal companion.
+ * Hue ~150 (green) is the brand anchor; ~95 (warm) is the paper. The whole
+ * app is token-driven, so these variables drive every surface.
+ */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --radius: 0.5rem;
+  --background: oklch(0.963 0.013 95);
+  --foreground: oklch(0.21 0.018 152);
+  --card: oklch(0.986 0.008 95);
+  --card-foreground: oklch(0.21 0.018 152);
+  --popover: oklch(0.986 0.008 95);
+  --popover-foreground: oklch(0.21 0.018 152);
+  --primary: oklch(0.5 0.108 151);
+  --primary-foreground: oklch(0.98 0.012 95);
+  --secondary: oklch(0.93 0.016 95);
+  --secondary-foreground: oklch(0.32 0.05 151);
+  --muted: oklch(0.928 0.015 95);
+  --muted-foreground: oklch(0.495 0.022 145);
+  --accent: oklch(0.91 0.038 150);
+  --accent-foreground: oklch(0.33 0.07 151);
+  --destructive: oklch(0.552 0.2 27.3);
+  --border: oklch(0.882 0.016 92);
+  --input: oklch(0.882 0.016 92);
+  --ring: oklch(0.5 0.108 151);
+  --chart-1: oklch(0.5 0.108 151);
+  --chart-2: oklch(0.62 0.11 168);
+  --chart-3: oklch(0.7 0.12 130);
+  --chart-4: oklch(0.78 0.13 95);
+  --chart-5: oklch(0.6 0.13 60);
+  --sidebar: oklch(0.948 0.014 95);
+  --sidebar-foreground: oklch(0.21 0.018 152);
+  --sidebar-primary: oklch(0.5 0.108 151);
+  --sidebar-primary-foreground: oklch(0.98 0.012 95);
+  --sidebar-accent: oklch(0.91 0.038 150);
+  --sidebar-accent-foreground: oklch(0.33 0.07 151);
+  --sidebar-border: oklch(0.882 0.016 92);
+  --sidebar-ring: oklch(0.5 0.108 151);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
+  --background: oklch(0.19 0.014 152);
+  --foreground: oklch(0.94 0.012 95);
+  --card: oklch(0.227 0.015 152);
+  --card-foreground: oklch(0.94 0.012 95);
+  --popover: oklch(0.227 0.015 152);
+  --popover-foreground: oklch(0.94 0.012 95);
+  --primary: oklch(0.68 0.14 150);
+  --primary-foreground: oklch(0.17 0.02 152);
+  --secondary: oklch(0.272 0.016 152);
+  --secondary-foreground: oklch(0.92 0.02 130);
+  --muted: oklch(0.272 0.016 152);
+  --muted-foreground: oklch(0.72 0.018 140);
+  --accent: oklch(0.32 0.045 150);
+  --accent-foreground: oklch(0.92 0.025 130);
+  --destructive: oklch(0.65 0.19 25);
   --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --input: oklch(1 0 0 / 13%);
+  --ring: oklch(0.68 0.14 150);
+  --chart-1: oklch(0.68 0.14 150);
+  --chart-2: oklch(0.72 0.12 175);
+  --chart-3: oklch(0.78 0.13 125);
+  --chart-4: oklch(0.82 0.14 95);
+  --chart-5: oklch(0.7 0.15 55);
+  --sidebar: oklch(0.227 0.015 152);
+  --sidebar-foreground: oklch(0.94 0.012 95);
+  --sidebar-primary: oklch(0.68 0.14 150);
+  --sidebar-primary-foreground: oklch(0.17 0.02 152);
+  --sidebar-accent: oklch(0.32 0.045 150);
+  --sidebar-accent-foreground: oklch(0.92 0.025 130);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-ring: oklch(0.68 0.14 150);
 }
 
 @theme inline {
@@ -110,6 +116,7 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-archivo);
 }
 
 @layer base {
@@ -118,5 +125,42 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Faint paper grain so the cream never reads as flat dead white. */
+    background-image: radial-gradient(
+        oklch(0.5 0.108 151 / 0.04) 0.5px,
+        transparent 0.5px
+      ),
+      radial-gradient(oklch(0.5 0.108 151 / 0.03) 0.5px, transparent 0.5px);
+    background-position:
+      0 0,
+      11px 11px;
+    background-size: 22px 22px;
+    background-attachment: fixed;
+  }
+  .dark body {
+    background-image: radial-gradient(
+        oklch(0.68 0.14 150 / 0.05) 0.5px,
+        transparent 0.5px
+      ),
+      radial-gradient(oklch(0.68 0.14 150 / 0.04) 0.5px, transparent 0.5px);
+  }
+  /* Tighten the heavy editorial headings. */
+  .font-display {
+    font-family: var(--font-display), var(--font-geist-sans), sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Theme-toggle crossfade — calm, not flashy. */
+@media (prefers-reduced-motion: no-preference) {
+  html.theme-transition,
+  html.theme-transition *,
+  html.theme-transition *::before,
+  html.theme-transition *::after {
+    transition:
+      background-color 0.3s ease,
+      border-color 0.3s ease,
+      color 0.3s ease,
+      fill 0.3s ease;
   }
 }

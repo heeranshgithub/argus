@@ -48,7 +48,9 @@ export function SessionCreateForm() {
   return (
     <Card className="w-full max-w-2xl">
       <CardHeader>
-        <CardTitle>New research session</CardTitle>
+        <CardTitle className="font-display text-2xl font-extrabold tracking-tight">
+          New research session
+        </CardTitle>
         <CardDescription>
           Tell Argus who you&apos;re meeting and what you want to learn.
         </CardDescription>
