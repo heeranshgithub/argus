@@ -151,6 +151,19 @@
   }
 }
 
+@media print {
+  /* Preserve background colors and green tints exactly as rendered on screen. */
+  * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Remove the grain pattern — repeating dot backgrounds don't translate to paper. */
+  body {
+    background-image: none;
+  }
+}
+
 /* Theme-toggle crossfade — calm, not flashy. */
 @media (prefers-reduced-motion: no-preference) {
   html.theme-transition,

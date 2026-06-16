@@ -1,8 +1,5 @@
 # Product Improvements
 
-**Audience:** the reviewer. Written from a seller's point of view, not a code one.
-(Fits two printed pages.)
-
 ## 1. Five weaknesses in the current product
 
 1. **Sessions are one-shot.** You can't refine the brief inline ("focus on their
