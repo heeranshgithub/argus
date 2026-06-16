@@ -1,8 +1,5 @@
 # Architecture
 
-**Audience:** an engineer joining the team next week. This is the map of how
-Argus is put together and why the moving parts fit the way they do.
-
 Argus researches a target company and produces a structured sales briefing. A
 user creates a *session*, kicks off a LangGraph *workflow* that runs as a
 background task, watches it progress live over SSE, reads the generated
