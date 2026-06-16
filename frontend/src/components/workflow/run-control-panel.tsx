@@ -124,19 +124,7 @@ export function RunControlPanel({
         <FileText className="size-4" aria-hidden />
         View report
       </Button>
-      <Button
-        variant="outline"
-        onClick={handleStart}
-        disabled={busy}
-        className="w-full"
-      >
-        {busy ? (
-          <Loader2 className="size-4 animate-spin" aria-hidden />
-        ) : (
-          <RefreshCw className="size-4" aria-hidden />
-        )}
-        Re-run
-      </Button>
+
       {view.overall.durationMs !== undefined && (
         <p className="text-muted-foreground text-center text-xs tabular-nums">
           Completed in {formatDuration(view.overall.durationMs)}
