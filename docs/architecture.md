@@ -293,18 +293,17 @@ streaming (in-process bus).
 ## 8. Deployment shape (illustrative)
 
 ```
-              ┌─────────┐        ┌──────────────────────┐      ┌─────────────┐
-  Users ────▶ │ Vercel  │ ─────▶ │  FastAPI (Uvicorn)   │ ───▶ │ Mongo Atlas │
-              │ (Next)  │  HTTPS │  behind nginx/Fly.io  │      └─────────────┘
-              └─────────┘        └──────────┬───────────┘
-                                            └────────▶ OpenRouter / Tavily
+              ┌──────────────┐        ┌──────────────────────┐      ┌─────────────┐
+  Users ────▶ │ AWS Amplify  │ ─────▶ │  FastAPI (Uvicorn)   │ ───▶ │ Mongo Atlas │
+              │ (Next.js)    │  HTTPS │  on AWS EC2 + nginx   │      └─────────────┘
+              └──────────────┘        └──────────┬───────────┘
+                                                 └────────▶ OpenRouter / Tavily
 ```
 
-- **Frontend:** Vercel (static shell + RTK Query to the API base URL).
-- **Backend:** a single small Uvicorn instance behind nginx (or Fly.io/Railway).
+- **Frontend:** AWS Amplify (Next.js build; RTK Query points to the EC2 API base URL).
+- **Backend:** a single Uvicorn instance on AWS EC2 behind nginx (reverse proxy + TLS termination).
 - **DB:** MongoDB Atlas.
 - **CI:** GitHub Actions runs `ruff`, `mypy`, `pytest`, `eslint`, `tsc`, `build`.
 
-This is the target shape, not what the assignment ships. The current build is
-single-worker and single-tenant by design (see `engineering-decisions.md` for the
-debt and the scale-out plan).
+The current build is single-worker and single-tenant by design (see
+`engineering-decisions.md` for the debt and the scale-out plan).
