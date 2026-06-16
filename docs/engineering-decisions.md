@@ -1,11 +1,5 @@
 # Engineering Decisions
 
-**Audience:** the reviewer. This records the decisions that shaped Argus, the
-alternatives weighed, what we traded away, the debt we knowingly took on, the
-biggest risk, and what two more weeks would buy.
-
----
-
 ## 1. Three major engineering decisions
 
 ### D1 — OpenRouter as the single LLM gateway
@@ -26,7 +20,8 @@ appropriate model and a fallback chain handles provider outages.
 
 **Consequences.** One API key, one client, per-node model tiering, and a built-in
 fallback chain — at the cost of a hard dependency on OpenRouter's uptime
-(mitigated; see §5) and slightly less control over provider-specific features.
+(accepted risk; partial mitigations in section 4) and slightly less control over
+provider-specific features.
 Structured output is handled defensively (native JSON-schema where supported,
 otherwise JSON mode + schema-in-prompt + one repair retry).
 
@@ -46,7 +41,7 @@ then tails live events, deduplicating by `seq`.
 
 **Consequences.** Plain HTTP, native browser reconnect, trivial proxying, and
 exact resumability (no gaps, no dupes) on refresh/reconnect — at the cost of an
-**in-process** event bus that doesn't span replicas (see §4).
+**in-process** event bus that doesn't span replicas (see section 3, item 4).
 
 ### D3 — Custom Mongo checkpointer (`BaseCheckpointSaver`)
 
