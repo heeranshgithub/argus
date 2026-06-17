@@ -113,25 +113,25 @@ replays buffered token deltas and tails the rest.
 ## 3. The LangGraph workflow
 
 ```
-              ┌─────────┐
-   START ───▶ │ planner │  break objective into sub-questions
-              └────┬────┘
-                   ▼
-            ┌────────────┐
+              ┌─────────┐   needs_more_research?  (loop, capped)
+   START ───▶ │ planner │ ◀──────────── yes ───────────────┐
+              └────┬────┘  turn missing_areas into          │
+                   ▼       fresh gap-closing questions       │
+            ┌────────────┐                                   │
             │ researcher │  search + fetch + clean → raw_sources
-            └─────┬──────┘
-                  ▼
-        ┌──────────────────┐
+            └─────┬──────┘                                   │
+                  ▼                                          │
+        ┌──────────────────┐                                │
         │ signal_extractor │  pull funding/hiring/product/… signals
-        └────────┬─────────┘
-                 ▼
-            ┌──────────┐
+        └────────┬─────────┘                                │
+                 ▼                                          │
+            ┌──────────┐                                    │
             │ analyst  │  synthesize overview/products/customers/risks
-            └────┬─────┘
-                 ▼
-         ┌───────────────┐   needs_more_research?  ┌────────────┐
-         │ quality_check │ ───────── yes ────────▶ │ researcher │ (loop, capped)
-         └───────┬───────┘                          └────────────┘
+            └────┬─────┘                                    │
+                 ▼                                          │
+         ┌───────────────┐                                 │
+         │ quality_check │ ──────────── yes ───────────────┘
+         └───────┬───────┘
                  │ no
                  ▼
             ┌──────────┐
@@ -148,9 +148,13 @@ replays buffered token deltas and tails the rest.
   `researched_question_ids`). Channels with reducers *accumulate* — e.g.
   `raw_sources` merges and de-dupes by URL across research loops; plain channels
   are last-write-wins.
-- **Conditional routing:** `quality_check` returns `needs_more_research`; the
-  conditional edge loops back to `researcher` (bounded by
-  `workflow_max_research_iterations`) or proceeds to `reporter`.
+- **Conditional routing:** `quality_check` returns `needs_more_research` plus
+  `missing_areas`; the conditional edge loops back to `planner` — which converts
+  those gaps into *new* sub-questions so the next research pass has something
+  fresh to chase (looping straight to `researcher` would re-run it against the
+  already-researched plan and gather nothing). Bounded by
+  `workflow_max_research_iterations`, and only taken when `missing_areas` is
+  non-empty; otherwise proceeds to `reporter`.
 - **Intermediate outputs:** each node emits `node_output` events the UI renders
   live (sub-questions, sources found, signals, the analysis block, the verdict).
 - **Failure handling:** per-node retry policy (`workflow_node_retry_limit`);

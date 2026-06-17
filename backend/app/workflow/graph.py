@@ -3,14 +3,15 @@
 Linear backbone with one loop:
 
     planner → researcher → signal_extractor → analyst → quality_check
-                  ▲                                         │
-                  └──────── [needs_more_research] ──────────┘
-                                                            │
-                                                       reporter → END
+       ▲                                                     │
+       └─────────────── [needs_more_research] ───────────────┘
+                                                             │
+                                                        reporter → END
 
-``quality_check`` is the required conditional edge: it routes back to
-``researcher`` while coverage is weak (bounded by ``research_iteration``), else
-forward to ``reporter``.
+``quality_check`` is the required conditional edge: while coverage is weak
+(bounded by ``research_iteration``) it routes back to the ``planner`` — which
+turns ``quality.missing_areas`` into fresh gap-closing sub-questions for the
+researcher to chase — else forward to ``reporter``.
 """
 
 from __future__ import annotations
@@ -48,17 +49,32 @@ def _retry_on(exc: Exception) -> bool:
 
 def route_after_quality(
     state: GraphState, *, max_iterations: int
-) -> Literal["researcher", "reporter"]:
+) -> Literal["planner", "reporter"]:
     """Decide whether to loop back for more research or finalize the report.
 
-    Loops to ``researcher`` only while the quality gate asks for more *and* we
-    haven't hit the research-iteration cap — otherwise proceeds to ``reporter``.
+    Loops back to the ``planner`` (not the researcher) so the gap closes with
+    *new* sub-questions: the planner reads ``quality.missing_areas`` and appends
+    sharper questions for the researcher to chase. Looping straight to the
+    researcher would re-run it against the same plan, whose questions are all
+    already in ``researched_question_ids`` — yielding zero new sources.
+
+    Loops only while the quality gate asks for more, we have concrete
+    ``missing_areas`` to plan against, and we haven't hit the research-iteration
+    cap — otherwise proceeds to ``reporter``. The empty-``missing_areas`` guard
+    matters because the schema permits ``needs_more_research=true`` with no
+    listed gaps; without a target the planner would just regenerate its initial
+    questions and loop without progress.
     """
     quality = state.get("quality")
     iteration = state.get("research_iteration", 0)
-    if quality and quality.get("needs_more_research") and iteration < max_iterations:
-        log.info("route_back_to_researcher", iteration=iteration)
-        return "researcher"
+    if (
+        quality
+        and quality.get("needs_more_research")
+        and quality.get("missing_areas")
+        and iteration < max_iterations
+    ):
+        log.info("route_back_to_planner", iteration=iteration)
+        return "planner"
     log.info("route_to_reporter", iteration=iteration)
     return "reporter"
 
@@ -105,7 +121,7 @@ def build_graph(
     builder.add_conditional_edges(
         "quality_check",
         lambda state: route_after_quality(state, max_iterations=max_iterations),
-        {"researcher": "researcher", "reporter": "reporter"},
+        {"planner": "planner", "reporter": "reporter"},
     )
     builder.add_edge("reporter", END)
 

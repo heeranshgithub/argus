@@ -30,7 +30,24 @@ def test_route_back_when_low_quality_and_under_cap() -> None:
             "needs_more_research": True,
         },
     )
-    assert route_after_quality(state, max_iterations=2) == "researcher"
+    # Loops back to the planner (not the researcher) so new gap-closing
+    # sub-questions are generated before the next research pass.
+    assert route_after_quality(state, max_iterations=2) == "planner"
+
+
+def test_route_to_reporter_when_more_research_but_no_missing_areas() -> None:
+    # The schema permits needs_more_research=True with empty missing_areas;
+    # without a concrete gap to plan against, finalize rather than loop in place.
+    state = base_state(
+        research_iteration=1,
+        quality={
+            "coverage_score": 0.3,
+            "confidence_score": 0.3,
+            "missing_areas": [],
+            "needs_more_research": True,
+        },
+    )
+    assert route_after_quality(state, max_iterations=2) == "reporter"
 
 
 def test_route_to_reporter_when_cap_reached() -> None:
@@ -85,7 +102,7 @@ async def test_quality_check_low_then_high_routing(deps, db) -> None:
     low_update, _ = await invoke_node(node, base_state(research_iteration=1), db)
     assert route_after_quality(
         {**base_state(research_iteration=1), **low_update}, max_iterations=2
-    ) == "researcher"
+    ) == "planner"
 
     high_update, _ = await invoke_node(node, base_state(research_iteration=1), db)
     assert route_after_quality(
