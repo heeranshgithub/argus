@@ -11,6 +11,7 @@ export interface Session {
   website: string;
   objective: string;
   status: SessionStatus;
+  isVisible: boolean;
   createdAt: string; // ISO 8601
   updatedAt: string; // ISO 8601
 }

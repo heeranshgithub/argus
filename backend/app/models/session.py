@@ -48,6 +48,7 @@ class SessionOut(ApiModel):
     website: str
     objective: str
     status: SessionStatus
+    is_visible: bool = True
     created_at: datetime
     updated_at: datetime
 

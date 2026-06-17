@@ -49,6 +49,7 @@ async def create(db: AsyncIOMotorDatabase, data: SessionCreate) -> SessionOut:
         "website": str(data.website),
         "objective": data.objective,
         "status": SessionStatus.CREATED.value,
+        "is_visible": True,
         "created_at": now,
         "updated_at": now,
     }
@@ -65,7 +66,7 @@ async def list_sessions(
     # created_at values still return in a stable newest-first order.
     cursor = (
         db[SESSIONS]
-        .find()
+        .find({"is_visible": {"$ne": False}})
         .sort([("created_at", -1), ("_id", -1)])
         .skip(skip)
         .limit(limit)
@@ -74,8 +75,8 @@ async def list_sessions(
 
 
 async def count(db: AsyncIOMotorDatabase) -> int:
-    """Total number of sessions."""
-    return await db[SESSIONS].count_documents({})
+    """Total number of visible sessions."""
+    return await db[SESSIONS].count_documents({"is_visible": {"$ne": False}})
 
 
 async def get(db: AsyncIOMotorDatabase, session_id: str) -> SessionOut | None:
