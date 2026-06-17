@@ -57,7 +57,7 @@ Nodes (each writes to shared state, emits progress event, is independently retry
 2. **Web Research** — runs web search + page fetches for company + sub-questions.
 3. **Signal Extractor** — pulls business signals (funding, hiring, news, product launches).
 4. **Analyst** — synthesizes overview, products, customers, risks.
-5. **Quality Check** — conditional routing: if confidence/coverage low → loop back to Research (max N retries); else proceed.
+5. **Quality Check** — conditional routing: if confidence/coverage low → loop back to the Planner to re-plan the missing areas as new sub-questions, then re-research (max N retries); else proceed.
 6. **Report Generator** — emits structured report matching the required schema.
 
 State persisted via LangGraph checkpointer (Mongo-backed) so a session can resume after crash.

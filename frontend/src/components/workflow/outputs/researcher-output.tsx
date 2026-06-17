@@ -5,7 +5,6 @@ import type { NodeView } from "@/hooks/use-run-state";
 export function ResearcherOutput({ node }: { node: NodeView }) {
   const sources = num(node.output, "new_sources");
   const questions = num(node.output, "questions_researched");
-  const errors = num(node.output, "errors");
 
   if (sources === undefined && questions === undefined) {
     return (
@@ -23,9 +22,6 @@ export function ResearcherOutput({ node }: { node: NodeView }) {
         )}
         {questions !== undefined && (
           <StatChip label="questions researched" value={questions} />
-        )}
-        {errors !== undefined && errors > 0 && (
-          <StatChip label="fetch errors" value={errors} tone="warn" />
         )}
       </div>
       {node.iterations > 1 && (

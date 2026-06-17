@@ -229,7 +229,7 @@ Each node card has:
 - Duration ("1.4s") once finished; live elapsed once started.
 - Expandable details (`<Collapsible>` shadcn) showing the node's typed `output` preview (see §3.6).
 - Connector line between cards; the line animates (subtle pulse) while the *next* node is running.
-- A small "iteration 2" badge appears on `researcher` if Quality Check looped back.
+- A small "iteration 2" badge appears on `researcher` if Quality Check looped back. (The loop re-activates the `planner` first — it re-plans the missing areas — so both `planner` and `researcher` show a second activation.)
 
 #### Animations
 - Status transitions use `framer-motion` (single small dep) for color and pulse — keep it tasteful; no spinning logos.
@@ -354,7 +354,7 @@ ShadCN `Tabs`. URL-synced via the App Router (`?tab=progress|report|chat`) so re
 - [ ] `lib/sse.ts` reconnects with `since_seq` after transient errors
 - [ ] `useRunStream` seeds from `getRun`, attaches live, merges without duplicates, surfaces error
 - [ ] `WorkflowProgress` shows live status, durations, and node-specific outputs for all 6 nodes
-- [ ] Conditional loop-back from `qualityCheck` to `researcher` renders correctly (iteration badge, second activation)
+- [ ] Conditional loop-back from `qualityCheck` to `planner` (then `researcher`) renders correctly (iteration badge, second activation of both)
 - [ ] `RunControlPanel` handles all four states (idle / running / completed / failed) with correct actions
 - [ ] `ReportView` renders all 9 sections with sources cross-referenced and copy/print actions
 - [ ] Page refresh mid-run rebuilds identical UI state via backfill, then continues live with no missed/dup events

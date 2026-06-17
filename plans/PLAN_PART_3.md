@@ -27,10 +27,10 @@ This is the highest-weighted slice of the rubric (LangGraph 25% + AI Engineering
                                          ▼
    ┌─────────┐    ┌──────────┐   ┌──────────────┐   ┌─────────┐   ┌──────────────┐   ┌──────────┐   ┌────────┐
    │ planner │ -> │ researcher│-> │signal_extract│-> │ analyst │-> │ quality_check│-> │ reporter │-> │  END   │
-   └─────────┘    └──────────┘   └──────────────┘   └─────────┘   └──────┬───────┘   └──────────┘   └────────┘
-                       ▲                                                  │
-                       └──────────────[ if low confidence ]────────────────┘
-                                       (max 2 retries)
+   └────┬────┘    └──────────┘   └──────────────┘   └─────────┘   └──────┬───────┘   └──────────┘   └────────┘
+        ▲                                                                 │
+        └─────────────────────[ if low confidence ]──────────────────────┘
+                          (re-plans gaps as new questions; max 2 retries)
 ```
 
 - **Checkpointer:** custom Mongo-backed `BaseCheckpointSaver` (or `langgraph.checkpoint.mongodb.MongoDBSaver` if available — verify version) keyed by `thread_id = session_id`. Allows a crashed run to resume from the last completed node.
@@ -201,8 +201,8 @@ Each node:
 - LLM call evaluates: coverage of the 9 required report sections, contradiction detection, citation density, confidence per section.
 - Returns `QualityVerdict`.
 - **Conditional routing:**
-  - If `needs_more_research and retry_counts['researcher'] < 2` → route back to `researcher` (with `missing_areas` injected as new sub-questions appended to `plan`).
-  - Else → `reporter`.
+  - If `needs_more_research and missing_areas and research_iteration < N` → route back to `planner`, which turns `missing_areas` into fresh gap-closing sub-questions appended to `plan` for the researcher to chase. (Routing straight to `researcher` would re-run it against the already-researched plan and gather nothing.)
+  - Else → `reporter`. (Includes the case where `needs_more_research` is true but `missing_areas` is empty — no concrete gap to plan against.)
 - This is the *required* conditional edge.
 
 ### 4.6 `reporter`
