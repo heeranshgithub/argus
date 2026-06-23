@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SSE & Optimistic UI · Deep Dive</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='%2356d364' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round' d='M2 12h4l3 8 4-16 3 8h4'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+<button class="menu-toggle" aria-label="Menu" onclick="document.querySelector('.sidebar').classList.toggle('open')">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+
+<div class="app">
+  <aside class="sidebar">
+    <a class="back-link" href="index.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      Back to the frontend playbook
+    </a>
+
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#dffbe4" stroke-width="2"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">Streaming & Optimistic UI</div>
+        <div class="brand-sub">SSE · Live tokens · Reconciliation</div>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="search" id="search" placeholder="Filter topics…  (press /)" autocomplete="off" />
+    </div>
+
+    <nav id="nav"></nav>
+  </aside>
+
+  <main class="content">
+    <header class="hero">
+      <h1>Live data, <span class="grad">two halves of one trick</span></h1>
+      <p>The chat reply feels instant <i>and</i> arrives token-by-token because two patterns work together: <b>Optimistic UI</b> paints the message before the server confirms it, and <b>Server-Sent Events (SSE)</b> stream the actual tokens in afterward. This page takes both apart — concept first, then the exact Argus code — until you can rebuild them from memory and defend every line.</p>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar"><i id="progressFill"></i></div>
+        <div class="progress-label" id="progressLabel">0 of 0 sections reviewed</div>
+      </div>
+      <div class="hero-meta">
+        <span><b>Files</b> · <span class="kbd">lib/sse.ts</span> · <span class="kbd">hooks/use-chat-stream.ts</span> · <span class="kbd">hooks/use-run-stream.ts</span></span>
+        <span><b>Shortcut</b> · <span class="kbd">/</span> to search</span>
+      </div>
+    </header>
+
+    <div class="content-inner" id="sections">
+
+    <!-- ════════════ ORIENT ════════════ -->
+    <section id="overview" data-group="Orient">
+      <div class="sec-head"><div><div class="sec-kicker">Start here</div><h2>The whole picture in one diagram</h2></div></div>
+      <p class="lead">Before the details, hold this shape in your head. A user sends a chat message. Two things must happen at once: the UI should react <b>immediately</b> (it can't wait ~10s for an LLM), and the real answer must <b>stream in</b> as the model generates it. Optimistic UI owns the first; SSE owns the second; a reconciliation step makes sure they converge on the truth.</p>
+
+      <div class="flow">
+        <div class="flow-box start"><b>User hits send</b><span class="sub">composer calls <code>send(content)</code></span></div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-split">
+          <div class="flow-branch yes">
+            <span class="blabel">OPTIMISTIC</span>
+            <div class="flow-box">Paint a placeholder<br>user + assistant pair<span class="sub">screen updates in &lt;16ms</span></div>
+          </div>
+          <div class="flow-branch yes">
+            <span class="blabel">SSE</span>
+            <div class="flow-box">Open a token stream<br><code>EventSource</code> → deltas<span class="sub">text grows live</span></div>
+          </div>
+        </div>
+        <div class="flow-arr" data-label="server rows land + 'done' frame">↓</div>
+        <div class="flow-box end"><b>Reconcile</b><span class="sub">drop placeholders, keep the real persisted row</span></div>
+      </div>
+
+      <div class="callout key"><span class="ct">The one-sentence mental model</span><p>"<b>Optimistic UI is a promise the UI makes; SSE is how the server keeps it; reconciliation is how we check the promise was kept.</b> The optimistic placeholder fills the gap between the click and the first token; the stream fills in the answer; the refetch replaces guesses with persisted truth."</p></div>
+
+      <h4>Why this combination is a senior signal</h4>
+      <ul>
+        <li>Most candidates know <i>one</i> of these. Pairing them — and naming the <b>failure mode of each</b> — is what reads as experience.</li>
+        <li>It forces you to talk about <b>state ownership</b>: what's the source of truth (server cache), what's ephemeral (live tokens), what's a temporary lie (the optimistic placeholder).</li>
+        <li>It naturally leads into <b>resilience</b>: reconnection, resume cursors, dedup, cleanup — all the things interviewers probe after the happy path.</li>
+      </ul>
+    </section>
+
+    <!-- ════════════ SSE ════════════ -->
+    <section id="sse-what" data-group="SSE · the transport">
+      <div class="sec-head"><div><div class="sec-kicker">SSE</div><h2>What SSE actually is</h2></div></div>
+      <p class="lead"><b>Server-Sent Events</b> is a browser standard for a <b>one-way</b>, <b>server→client</b>, <b>long-lived</b> stream of text messages over a single ordinary HTTP response. The server holds the response open and keeps writing; the browser fires an event for each message. That's the entire idea.</p>
+
+      <h4>How it differs from the alternatives</h4>
+      <table class="tbl">
+        <tr><th>Approach</th><th>Direction</th><th>Connection</th><th>Good for</th></tr>
+        <tr><td><b>Polling</b></td><td>client asks repeatedly</td><td>many short requests</td><td>simple, but laggy + wasteful</td></tr>
+        <tr><td><b>Long-polling</b></td><td>client asks, server holds</td><td>request per message-ish</td><td>okay fallback, awkward</td></tr>
+        <tr><td><b>SSE</b></td><td><b>server → client only</b></td><td>one long-lived HTTP response</td><td><b>streams, feeds, progress, tokens</b></td></tr>
+        <tr><td><b>WebSocket</b></td><td>full duplex (both ways)</td><td>upgraded TCP socket</td><td>chat rooms, games, collab cursors</td></tr>
+      </table>
+
+      <div class="callout why"><span class="ct">"Why SSE and not WebSockets?" — the answer that wins</span><p>"My data is <b>one-directional</b>: the server pushes workflow progress and LLM tokens; the client never needs to push back over the same channel (user actions go through normal REST POSTs). SSE gives me exactly that over plain HTTP — so it rides through proxies, load balancers, and HTTP/2 with <b>no protocol upgrade</b>, and the browser's <code>EventSource</code> gives me <b>automatic reconnection and an event id / resume mechanism for free</b>. WebSockets are full-duplex and heavier; I'd reach for them only if the client needed to stream <i>to</i> the server too. Picking the lighter tool that fits the data flow is the point."</p></div>
+
+      <div class="callout info"><span class="ct">The constraints to know</span><p>SSE is <b>text only</b> (UTF-8 — send JSON as a string, not binary). Over HTTP/1.1 a browser allows only <b>~6 connections per domain</b>, so many open streams can starve other requests — HTTP/2 multiplexing removes that limit (Argus runs behind HTTP/2). And it's <b>server→client only</b> by design.</p></div>
+    </section>
+
+    <section id="sse-wire" data-group="SSE · the transport">
+      <div class="sec-head"><div><div class="sec-kicker">SSE</div><h2>The wire format (this demystifies everything)</h2></div></div>
+      <p>People treat SSE as magic until they see the bytes. It's a dead-simple <b>text protocol</b>. The server responds with <code>Content-Type: text/event-stream</code> and then writes <b>UTF-8 text frames</b>. Each frame is a few <code>field: value</code> lines, and a <b>blank line</b> terminates the frame and dispatches the event.</p>
+
+<pre><span class="tok-c">HTTP/1.1 200 OK</span>
+<span class="tok-c">Content-Type: text/event-stream</span>      <span class="tok-c">// ← this header is what makes it SSE</span>
+<span class="tok-c">Cache-Control: no-cache</span>
+<span class="tok-c">Connection: keep-alive</span>
+
+event: delta                          <span class="tok-c">// the event NAME (default is "message")</span>
+id: 1                                 <span class="tok-c">// becomes lastEventId — the resume cursor</span>
+data: {"seq":1,"text":"Based"}        <span class="tok-c">// the payload (we send JSON as a string)</span>
+                                      <span class="tok-c">// ↑ BLANK LINE = end of frame, fire the event</span>
+event: delta
+id: 2
+data: {"seq":2,"text":" on the"}
+
+event: done                           <span class="tok-c">// a differently-named event ends the reply</span>
+id: 3
+data: {"messageId":"m_42","status":"complete","citations":[...]}
+
+:</span> this is a comment / heartbeat — keeps the connection warm</pre>
+
+      <table class="tbl">
+        <tr><th>Field</th><th>Meaning</th></tr>
+        <tr><td><code>event:</code></td><td>The event name you listen for. Omitted ⇒ the generic <code>"message"</code> event. Argus uses <b>named</b> events (<code>delta</code>, <code>done</code>, <code>node_started</code>…).</td></tr>
+        <tr><td><code>data:</code></td><td>The payload line(s). Multiple <code>data:</code> lines are joined with <code>\n</code>. We put a JSON string here and <code>JSON.parse</code> it on arrival.</td></tr>
+        <tr><td><code>id:</code></td><td>An event id. The browser remembers the last one and sends it back as the <code>Last-Event-ID</code> header on auto-reconnect — the <b>native</b> resume mechanism.</td></tr>
+        <tr><td><code>retry:</code></td><td>Milliseconds the browser should wait before auto-reconnecting. (Argus drives its own reconnect instead — see below.)</td></tr>
+        <tr><td><code>:</code> (colon)</td><td>A comment line. Used as a <b>heartbeat</b> to stop idle proxies from killing the connection.</td></tr>
+      </table>
+
+      <div class="callout key"><span class="ct">Say this and you sound like you've shipped it</span><p>"SSE isn't a special socket — it's a normal HTTP response the server never closes, streaming <code>text/event-stream</code> frames. Each frame is <code>event:</code>/<code>data:</code>/<code>id:</code> lines ended by a blank line. That simplicity is why it survives proxies and CDNs that mangle WebSocket upgrades."</p></div>
+    </section>
+
+    <section id="sse-eventsource" data-group="SSE · the transport">
+      <div class="sec-head"><div><div class="sec-kicker">SSE</div><h2>The client API: <code>EventSource</code></h2></div></div>
+      <p>The browser ships a built-in client for this protocol: <code>EventSource</code>. You give it a URL; it opens the stream, parses frames for you, and dispatches DOM events. You never touch the raw text.</p>
+
+<pre><span class="tok-k">const</span> es = <span class="tok-k">new</span> EventSource(url);          <span class="tok-c">// opens the GET stream immediately</span>
+
+es.onopen    = () => {<span class="tok-c">/* connected */</span>};
+es.onerror   = () => {<span class="tok-c">/* dropped — by default it auto-retries */</span>};
+
+<span class="tok-c">// generic "message" events (frames with no `event:` line):</span>
+es.onmessage = (ev) => console.log(ev.data);
+
+<span class="tok-c">// NAMED events need explicit listeners — this is the key gotcha:</span>
+es.addEventListener(<span class="tok-s">"delta"</span>, (ev) => {
+  <span class="tok-k">const</span> { seq, text } = JSON.parse(ev.data);  <span class="tok-c">// data is always a string</span>
+});
+es.addEventListener(<span class="tok-s">"done"</span>, (ev) => { <span class="tok-c">/* … */</span> es.close(); });
+
+es.close();                            <span class="tok-c">// you MUST close it — or it reconnects forever</span></pre>
+
+      <div class="callout gotcha"><span class="ct">The two traps everyone hits</span><p><b>(1) Named events bypass <code>onmessage</code>.</b> If the server sends <code>event: delta</code>, your <code>onmessage</code> handler will never fire — you must <code>addEventListener("delta", …)</code>. This is exactly why Argus registers one listener per event kind. <b>(2) <code>EventSource</code> auto-reconnects on its own</b> unless you <code>close()</code> it. Forget the cleanup and a "done" stream silently reopens, replaying or double-handling — which is why every Argus stream returns an explicit teardown.</p></div>
+
+      <div class="callout info"><span class="ct">Why Argus wraps it instead of using it raw</span><p>Native <code>EventSource</code> auto-reconnect re-sends <code>Last-Event-ID</code>, but we want the cursor in the <b>URL</b> (<code>?since_seq=</code>) so the backend's replay logic is dead simple and testable, and we want <b>our own backoff</b> plus an offline check. So Argus disables the implicit retry path (it <code>close()</code>s on error and reconnects manually). That trade — give up the freebie, gain control of the resume contract — is a great thing to be able to justify.</p></div>
+    </section>
+
+    <section id="sse-resume" data-group="SSE · the transport">
+      <div class="sec-head"><div><div class="sec-kicker">SSE</div><h2>Resumability: the <code>since_seq</code> contract</h2></div></div>
+      <p class="lead">This is the part that turns a toy stream into a production one. Networks drop. Tabs sleep. Users refresh mid-generation. The question is: <b>after a gap, how do you replay exactly what was missed — no gap, no duplicate?</b></p>
+
+      <h4>The idea: every event carries a monotonic <code>seq</code></h4>
+      <p>The backend stamps each event with an ever-increasing <b>sequence number</b> and persists them. The client tracks the highest <code>seq</code> it has seen. On (re)connect it asks for <code>?since_seq=N</code>, and the server replays only events with <code>seq &gt; N</code>.</p>
+
+      <div class="flow">
+        <div class="flow-box">Client has seen up to <b>seq 7</b></div>
+        <div class="flow-arr" data-label="connection drops at seq 7">↓</div>
+        <div class="flow-box decision"><b>reconnect</b> with <code>?since_seq=7</code></div>
+        <div class="flow-arr" data-label="server replays 8, 9, 10…">↓</div>
+        <div class="flow-box end"><b>No gap, no dupe</b><span class="sub">8,9,10 delivered; 1–7 never resent</span></div>
+      </div>
+
+      <p>Here's the exact cursor-tracking from <code>lib/sse.ts</code> — note the cursor is updated on <b>every</b> frame and folded into the reconnect URL:</p>
+
+<pre><span class="tok-c">// lib/sse.ts — the resume cursor lives in a closure variable</span>
+<span class="tok-k">let</span> lastSeq = opts.sinceSeq ?? <span class="tok-n">0</span>;
+
+<span class="tok-k">const</span> url = () => {
+  <span class="tok-k">const</span> u = <span class="tok-k">new</span> URL(baseUrl);
+  u.searchParams.set(<span class="tok-s">"since_seq"</span>, String(lastSeq));  <span class="tok-c">// ← cursor rides in the query string</span>
+  <span class="tok-k">return</span> u.toString();
+};
+
+<span class="tok-k">const</span> handle = (ev) => {
+  <span class="tok-k">const</span> event = JSON.parse(ev.data);
+  <span class="tok-k">if</span> (<span class="tok-k">typeof</span> event.seq === <span class="tok-s">"number"</span>)
+    lastSeq = Math.max(lastSeq, event.seq);          <span class="tok-c">// advance the high-water mark</span>
+  opts.onEvent(event);
+};</pre>
+
+      <h4>The reconnect loop: exponential backoff + an offline gate</h4>
+<pre><span class="tok-c">// lib/sse.ts — we drive reconnection ourselves</span>
+<span class="tok-k">const</span> connect = () => {
+  <span class="tok-k">if</span> (closed) <span class="tok-k">return</span>;                              <span class="tok-c">// torn down → stop</span>
+  <span class="tok-k">if</span> (navigator.onLine === <span class="tok-n">false</span>) {                <span class="tok-c">// don't hammer a dead network</span>
+    timer = setTimeout(connect, <span class="tok-n">2000</span>); <span class="tok-k">return</span>;
+  }
+  source = <span class="tok-k">new</span> EventSource(url());                  <span class="tok-c">// url() embeds the latest since_seq</span>
+  source.onopen = () => { retry = <span class="tok-n">0</span>; opts.onOpen?.(); };  <span class="tok-c">// reset backoff on success</span>
+  <span class="tok-k">for</span> (<span class="tok-k">const</span> kind <span class="tok-k">of</span> EVENT_KINDS)
+    source.addEventListener(kind, handle);            <span class="tok-c">// one listener per NAMED event</span>
+  source.onerror = () => {
+    source?.close(); source = <span class="tok-n">null</span>;
+    <span class="tok-k">const</span> delay = Math.min(<span class="tok-n">1000</span> * <span class="tok-n">2</span> ** retry++, <span class="tok-n">10_000</span>);  <span class="tok-c">// 1s,2s,4s… cap 10s</span>
+    timer = setTimeout(connect, delay);
+  };
+};</pre>
+
+      <div class="callout why"><span class="ct">Why exponential backoff (and why cap it)</span><p>"If the server is down, reconnecting every 100ms is a self-inflicted DDoS that delays its recovery. Exponential backoff (1→2→4→8s) backs off fast so a momentary blip retries quickly but a real outage doesn't flood. I <b>cap at 10s</b> so the client still recovers promptly once the server returns, and I <b>reset the counter on a successful open</b> so the next blip starts fresh. The offline check is a cheaper guard — if <code>navigator.onLine</code> is false there's no point even trying."</p></div>
+
+      <div class="callout key"><span class="ct">The line that proves you get it</span><p>"Resumability needs <b>three</b> things to line up: the server must <b>persist + sequence</b> events, the client must <b>track the high-water mark</b>, and the reconnect must <b>carry that cursor</b> so the server replays the tail. Miss any one and you get gaps or duplicates. The <code>seq</code> is also what makes my client-side merge idempotent — same number, same dedupe key."</p></div>
+    </section>
+
+    <section id="sse-argus" data-group="SSE · the transport">
+      <div class="sec-head"><div><div class="sec-kicker">Argus</div><h2>The wrapper, end to end</h2></div></div>
+      <p>Argus has <b>two</b> SSE consumers sharing the same shape: <code>openEventStream</code> (workflow progress, many named events) and <code>openChatStream</code> (a chat reply: <code>delta</code> ×N then <code>done</code>). Both return an <b>unsubscribe function</b> — the single most important detail for React.</p>
+
+      <h4>SSR-safe by construction</h4>
+<pre><span class="tok-k">export function</span> openEventStream(baseUrl, opts) {
+  <span class="tok-k">if</span> (<span class="tok-k">typeof</span> window === <span class="tok-s">"undefined"</span> || <span class="tok-k">typeof</span> EventSource === <span class="tok-s">"undefined"</span>) {
+    <span class="tok-k">return</span> () => {};      <span class="tok-c">// no-op on the server — EventSource is browser-only</span>
+  }
+  <span class="tok-c">// … browser path …</span>
+  <span class="tok-k">return</span> () => { closed = <span class="tok-n">true</span>; clearTimeout(timer); source?.close(); };
+}</pre>
+      <p>Because Next.js renders components on the server first, a hook that opened a stream during SSR would crash (<code>EventSource</code> doesn't exist in Node). Returning a no-op teardown means the calling <code>useEffect</code> still gets a valid cleanup function and the whole thing is safe either side of hydration.</p>
+
+      <h4>Chat vs run: the only real difference is the terminator</h4>
+      <table class="tbl">
+        <tr><th></th><th><code>openEventStream</code> (run)</th><th><code>openChatStream</code> (chat)</th></tr>
+        <tr><td>Events</td><td><code>run_started</code>, <code>node_started</code>, <code>node_output</code>, … (7 kinds)</td><td><code>delta</code> (many), <code>done</code> (one)</td></tr>
+        <tr><td>Ends when</td><td>a <code>run_completed</code>/<code>run_failed</code> event arrives (stream stays open, hook stops it)</td><td>the <code>done</code> frame arrives → wrapper <code>close()</code>s itself, <b>no reconnect after</b></td></tr>
+        <tr><td>Payload</td><td>a full <code>WorkflowEvent</code></td><td><code>{seq,text}</code> per delta; <code>{messageId,status,citations,error}</code> on done</td></tr>
+      </table>
+
+<pre><span class="tok-c">// openChatStream — 'done' is special: it terminates, it must not reconnect</span>
+<span class="tok-k">const</span> onDone = (ev) => {
+  opts.onDone(JSON.parse(ev.data));
+  close();   <span class="tok-c">// ← sets closed=true so onerror's reconnect path is a no-op</span>
+};</pre>
+
+      <div class="callout gotcha"><span class="ct">Subtle bug this avoids</span><p>If <code>done</code> didn't set <code>closed = true</code>, the server closing the connection right after the final frame would look like an <b>error</b> to <code>EventSource</code>, trigger <code>onerror</code>, and <b>reconnect a finished stream</b> — re-streaming the whole reply. The <code>closed</code> flag makes the terminator authoritative: once <code>done</code> lands, every later callback short-circuits.</p></div>
+    </section>
+
+    <!-- ════════════ OPTIMISTIC UI ════════════ -->
+    <section id="optimistic-what" data-group="Optimistic UI · the pattern">
+      <div class="sec-head"><div><div class="sec-kicker">Optimistic UI</div><h2>What it is, and the risk</h2></div></div>
+      <p class="lead"><b>Optimistic UI</b> updates the screen <b>assuming the operation will succeed</b>, before the server has confirmed it — so the app feels instant. You render the expected result now, fire the request in the background, and <b>reconcile</b> when the truth arrives (or roll back if it failed).</p>
+
+      <div class="flow">
+        <div class="flow-box start"><b>Pessimistic</b> (naive)<span class="sub">click → spinner → wait → render</span></div>
+        <div class="flow-arr" data-label="user stares at a spinner for ~10s">↓</div>
+        <div class="flow-box decision">feels slow, even if it's correct</div>
+      </div>
+      <div class="flow">
+        <div class="flow-box start"><b>Optimistic</b><span class="sub">click → render guess NOW → reconcile later</span></div>
+        <div class="flow-arr" data-label="feels instant; truth catches up invisibly">↓</div>
+        <div class="flow-box end">feels fast — <i>if</i> you handle the failure path</div>
+      </div>
+
+      <div class="callout why"><span class="ct">The interview answer (the one already in the playbook, expanded)</span><p>"Optimistic UI updates the screen assuming the operation will succeed, before the server responds, so the app feels instant. The <b>risk is divergence</b> if it fails — so you need a reconciliation or rollback path. In Argus, when you send a chat message I immediately render an optimistic user+assistant placeholder pair and start streaming tokens into the assistant one; once the real persisted rows arrive via refetch I drop the placeholders, and a failed reply surfaces a toast and is marked failed. So the optimistic state <b>always converges</b> with the server truth — it's never left lying."</p></div>
+
+      <h4>The three things every optimistic update needs</h4>
+      <ol class="steps">
+        <li><b>An immediate local write</b> — render the predicted result (the placeholder pair).</li>
+        <li><b>A reconciliation path</b> — when the server's truth lands, replace the guess with it (the <code>refetch</code> + overlay).</li>
+        <li><b>A failure path</b> — if it fails, roll back or mark it (the toast + <code>status: "failed"</code>). <b>Never leave a guess on screen as if it were real.</b></li>
+      </ol>
+    </section>
+
+    <section id="optimistic-flow" data-group="Optimistic UI · the pattern">
+      <div class="sec-head"><div><div class="sec-kicker">Argus</div><h2>The <code>send()</code> flow, line by line</h2></div></div>
+      <p>Here's the real <code>send</code> from <code>use-chat-stream.ts</code>. Four things happen in deliberate order:</p>
+
+<pre><span class="tok-c">// hooks/use-chat-stream.ts</span>
+<span class="tok-k">const</span> send = useCallback(<span class="tok-k">async</span> (content) => {
+  <span class="tok-k">try</span> {
+    <span class="tok-c">// 1. POST the message. The server creates the row + an empty assistant</span>
+    <span class="tok-c">//    row and returns the assistant messageId we'll stream into.</span>
+    <span class="tok-k">const</span> { messageId } = <span class="tok-k">await</span> postChat({ sessionId, content }).unwrap();
+
+    <span class="tok-c">// 2. OPTIMISTIC: paint a placeholder user+assistant pair right now,</span>
+    <span class="tok-c">//    keyed to the real assistant id so the stream can target it.</span>
+    setPending({
+      userId: <span class="tok-s">`pending-user-</span>${messageId}<span class="tok-s">`</span>,
+      userContent: content,
+      assistantId: messageId,
+      createdAt: <span class="tok-k">new</span> Date().toISOString(),
+    });
+
+    <span class="tok-c">// 3. STREAM: open the SSE reply from seq 0 — tokens render immediately,</span>
+    <span class="tok-c">//    without waiting on the history refetch.</span>
+    beginStream(messageId, <span class="tok-n">0</span>);
+
+    <span class="tok-c">// 4. RECONCILE: kick a background refetch so the real persisted rows</span>
+    <span class="tok-c">//    replace the placeholders when they land.</span>
+    <span class="tok-k">void</span> refetch();
+  } <span class="tok-k">catch</span> (e) {
+    <span class="tok-c">// FAILURE PATH: the POST itself failed — surface it, render nothing fake.</span>
+    toastError(<span class="tok-s">"Couldn't send message"</span>, { description: toApiError(e).message });
+  }
+}, [postChat, sessionId, refetch, beginStream]);</pre>
+
+      <div class="callout key"><span class="ct">Why the order matters</span><p>The <code>await postChat</code> comes <b>first</b> on purpose: we need the server's real <code>messageId</code> before we can key the placeholder and target the stream. Everything after it is fire-and-forget for instant feel — <code>setPending</code> (paint), <code>beginStream</code> (tokens), <code>void refetch()</code> (reconcile in the background). The <code>void</code> says "I'm intentionally not awaiting this" — the UI doesn't block on the refetch; the overlay shows live tokens in the meantime.</p></div>
+
+      <div class="callout info"><span class="ct">Note the source of truth</span><p>The optimistic placeholder is <b>not</b> the source of truth — it's a temporary stand-in. The truth is the <b>RTK Query chat-history cache</b>. That's the whole discipline: keep one authoritative store (server cache), let the optimistic layer be explicitly disposable, and make the convergence automatic.</p></div>
+    </section>
+
+    <section id="optimistic-overlay" data-group="Optimistic UI · the pattern">
+      <div class="sec-head"><div><div class="sec-kicker">Argus</div><h2>Reconciliation: overlay + placeholder drop</h2></div></div>
+      <p class="lead">This is the cleverest part. The displayed <code>messages</code> array is <b>derived</b> (with <code>useMemo</code>) from three inputs — the server history, the live token map, and the optimistic placeholders — and the merge rules guarantee convergence.</p>
+
+      <h4>Input 1 → 2: overlay live tokens onto the real row</h4>
+<pre><span class="tok-c">// take server history; if a row is still streaming, swap in the live text</span>
+<span class="tok-k">const</span> overlaid = items.map((m) => {
+  <span class="tok-k">const</span> live = liveText[m.id];
+  <span class="tok-k">if</span> (live != <span class="tok-n">null</span> && (m.status === <span class="tok-s">"streaming"</span> || !m.content)) {
+    <span class="tok-k">return</span> { ...m, content: live, status: <span class="tok-s">"streaming"</span> };  <span class="tok-c">// live tokens win</span>
+  }
+  <span class="tok-k">return</span> m;                                                <span class="tok-c">// finished rows pass through unchanged</span>
+});</pre>
+
+      <h4>Input 3: synthesize placeholders — but only until the real row lands</h4>
+<pre><span class="tok-k">if</span> (!pending) <span class="tok-k">return</span> overlaid;
+
+<span class="tok-c">// THE KEY CHECK: has the real assistant row arrived from the server yet?</span>
+<span class="tok-k">const</span> assistantLanded = overlaid.some((m) => m.id === pending.assistantId);
+<span class="tok-k">if</span> (assistantLanded) <span class="tok-k">return</span> overlaid;   <span class="tok-c">// ✓ truth is here → DROP both placeholders</span>
+
+<span class="tok-c">// otherwise show the optimistic pair (real id reused so the overlay targets it)</span>
+<span class="tok-k">return</span> [...overlaid, optimisticUser, optimisticAssistant];</pre>
+
+      <div class="callout key"><span class="ct">The convergence guarantee</span><p>Because the optimistic assistant reuses the <b>real <code>messageId</code></b>, the instant the server's row appears in <code>items</code>, <code>assistantLanded</code> flips true and the placeholders vanish — but the <b>overlay</b> keeps streaming live tokens onto that now-real row. There's <b>no flicker</b>: the text is continuous because both the placeholder and the real row render <code>liveText[messageId]</code>. The placeholder isn't "replaced" so much as it's "no longer needed."</p></div>
+
+      <div class="ascii"><pre class="ascii">  t0  send()         [user(opt)] [assistant(opt): ""]      ← placeholders only
+  t1  first token    [user(opt)] [assistant(opt): "Based"] ← liveText grows
+  t2  refetch lands  [user(real)][assistant(real): "Based on…"] ← placeholders dropped,
+                                                                  overlay continues on real row
+  t3  done frame     [user(real)][assistant(real): "…full answer"] ← refetch → persisted truth</pre></div>
+
+      <div class="callout why"><span class="ct">Why derive instead of mutate</span><p>"I never <b>imperatively</b> edit a messages array — I keep three minimal sources (server cache, a <code>liveText</code> map, a <code>pending</code> object) and compute the rendered list from them in a <code>useMemo</code>. That means there's no way for the displayed state to drift out of sync with its inputs: change any input and the list recomputes correctly. It's the same 'derive, don't duplicate' principle as the run timeline's <code>bySeq</code> map."</p></div>
+    </section>
+
+    <section id="optimistic-resume" data-group="Optimistic UI · the pattern">
+      <div class="sec-head"><div><div class="sec-kicker">Argus</div><h2>Resume-on-refresh (the part most apps skip)</h2></div></div>
+      <p>Optimistic UI handles the <i>send</i>. But what if you <b>refresh the tab</b> while the assistant is still generating? Naive apps lose the in-flight reply. Argus reattaches automatically.</p>
+
+<pre><span class="tok-c">// On mount, if history contains a still-"streaming" assistant row, reattach.</span>
+useEffect(() => {
+  <span class="tok-k">const</span> streaming = items.find(
+    (m) => m.role === <span class="tok-s">"assistant"</span> && m.status === <span class="tok-s">"streaming"</span>,
+  );
+  <span class="tok-k">if</span> (streaming && !startedRef.current.has(streaming.id)) {
+    beginStream(streaming.id, <span class="tok-n">0</span>);   <span class="tok-c">// reopen the SSE stream for that message</span>
+  }
+}, [items, beginStream]);</pre>
+
+      <div class="callout key"><span class="ct">Why this works — and why <code>startedRef</code> exists</span><p>The server <b>persisted</b> the assistant row with <code>status: "streaming"</code> and is still writing events for it. After a refresh, the history query returns that row; the effect spots it and reopens the stream from <code>seq 0</code> (the backend replays via <code>since_seq</code>). The <code>startedRef</code> Set guards against <b>reopening the same stream twice</b> — without it, every re-render where <code>items</code> changes would spawn a duplicate <code>EventSource</code>. That ref is "have I already started this one?" memory that survives re-renders without causing them.</p></div>
+
+      <div class="callout info"><span class="ct">This is where SSE and optimistic UI fuse</span><p>Resume is impossible without <b>both</b> halves: optimistic UI defined the message id and rendering contract, and SSE's <code>since_seq</code> resumability lets a fresh page rejoin the exact stream mid-flight. "Refresh never loses or doubles the reply" is the sentence; <code>seq</code>-based replay + a persisted streaming row is the mechanism.</p></div>
+    </section>
+
+    <!-- ════════════ TOGETHER ════════════ -->
+    <section id="lifecycle" data-group="Putting it together">
+      <div class="sec-head"><div><div class="sec-kicker">Walkthrough</div><h2>One message, full lifecycle</h2></div></div>
+      <p class="lead">Trace a single chat message through every system. If you can narrate this out loud, you own the topic.</p>
+
+      <div class="node-step"><span class="node-chip"><span class="num">1</span> send(content)</span> <span class="adds">composer → hook</span></div>
+      <p>User submits. <code>postChat</code> POSTs it; the server persists a user row + an empty assistant row (<code>status: "streaming"</code>) and returns the assistant <code>messageId</code>.</p>
+
+      <div class="flow-arrow">↓</div>
+      <div class="node-step"><span class="node-chip"><span class="num">2</span> optimistic paint</span> <span class="adds"><code>setPending</code></span></div>
+      <p>A placeholder user+assistant pair renders <b>immediately</b> — zero perceived latency. The assistant placeholder is keyed to the real <code>messageId</code>.</p>
+
+      <div class="flow-arrow">↓</div>
+      <div class="node-step"><span class="node-chip"><span class="num">3</span> open SSE</span> <span class="adds"><code>beginStream(messageId, 0)</code></span></div>
+      <p><code>openChatStream</code> opens an <code>EventSource</code> to <code>…/chat/{messageId}/stream?since_seq=0</code>. Each <code>delta</code> frame appends to <code>liveText[messageId]</code>; the placeholder's text grows token by token.</p>
+
+      <div class="flow-arrow">↓</div>
+      <div class="node-step"><span class="node-chip"><span class="num">4</span> reconcile</span> <span class="adds"><code>void refetch()</code></span></div>
+      <p>The background history refetch returns the real persisted rows. <code>assistantLanded</code> flips true → placeholders drop. The overlay keeps streaming tokens onto the now-real row — seamlessly.</p>
+
+      <div class="flow-arrow">↓</div>
+      <div class="node-step"><span class="node-chip q"><span class="num">5</span> done frame</span> <span class="adds">terminate + final refetch</span></div>
+      <p>The server sends <code>done</code> with status + citations. The wrapper <code>close()</code>s (no reconnect). <code>onDone</code> clears <code>activeId</code>/<code>pending</code>, and a final <code>refetch</code> pulls the <b>persisted</b> content + citations — the live overlay is replaced by ground truth. If <code>status === "failed"</code>, a toast fires instead.</p>
+
+      <div class="callout key"><span class="ct">The 20-second verbal version</span><p>"POST creates the rows and returns an id. I optimistically paint a placeholder pair so it's instant, open an SSE stream that appends tokens into a <code>liveText</code> map, and fire a background refetch. When the real rows land I drop the placeholders but keep overlaying live tokens onto the real row — no flicker. The <code>done</code> frame closes the stream and a final refetch swaps the live text for the persisted answer plus citations. A refresh mid-stream just finds the persisted <code>streaming</code> row and reattaches via <code>since_seq</code>."</p></div>
+    </section>
+
+    <section id="pitfalls" data-group="Putting it together">
+      <div class="sec-head"><div><div class="sec-kicker">Defense</div><h2>Gotchas an interviewer will poke at</h2></div></div>
+
+      <table class="tbl">
+        <tr><th>"What if…"</th><th>How Argus handles it</th></tr>
+        <tr><td>…the network drops mid-stream?</td><td>Wrapper reconnects with exponential backoff carrying <code>since_seq</code>; only un-seen events replay. The run hook flips <code>isReconnecting</code> to show a "lost" pill.</td></tr>
+        <tr><td>…the user refreshes mid-generation?</td><td>The persisted <code>streaming</code> row is found on mount and the stream reattaches from <code>seq 0</code> (server replays the tail).</td></tr>
+        <tr><td>…you get a duplicate event?</td><td><b>Idempotent merge.</b> The run hook dedupes by <code>seq</code> in a <code>Map</code>; chat deltas are append-only past the cursor. Same <code>seq</code> ⇒ ignored.</td></tr>
+        <tr><td>…the component unmounts?</td><td>Every <code>useEffect</code> returns a cleanup that calls the wrapper's teardown (<code>close()</code>) — no leaked <code>EventSource</code>, no "setState on unmounted" warnings.</td></tr>
+        <tr><td>…the reply fails?</td><td><code>done.status === "failed"</code> → toast + the row is marked <code>failed</code>; no fake content lingers. The POST failing is caught separately and toasted.</td></tr>
+        <tr><td>…you render on the server (SSR)?</td><td><code>openEventStream</code> returns a no-op teardown when <code>window</code>/<code>EventSource</code> is undefined — safe through hydration.</td></tr>
+      </table>
+
+      <div class="callout gotcha"><span class="ct">The cleanup question is the trap</span><p>The single most common follow-up is "where do you close the connection?" The answer is the <code>useEffect</code> cleanup function: <code>useEffect(() =&gt; { const close = openStream(...); return () =&gt; close(); }, [deps])</code>. Every subscription — SSE, WebSocket, interval, event listener — <b>must</b> be torn down on unmount or dep-change, or you leak the connection and run stale callbacks. Argus stores the teardown in a <code>closeRef</code> and also closes on unmount with a bare <code>useEffect(() =&gt; () =&gt; closeRef.current?.(), [])</code>.</p></div>
+
+      <div class="callout why"><span class="ct">Why a ref for the teardown, not state</span><p>"The close function isn't rendered, and updating it shouldn't trigger a re-render — that's the textbook use of <code>useRef</code>: a mutable handle that survives renders without causing them. Same reason <code>startedRef</code> (dedupe set) and <code>lastSeqRef</code> (resume cursor) are refs — they're bookkeeping the UI doesn't paint."</p></div>
+    </section>
+
+    <!-- ════════════ RAPID FIRE ════════════ -->
+    <section id="qa" data-group="Putting it together">
+      <div class="sec-head"><div><div class="sec-kicker">Flashcards</div><h2>Rapid-fire: SSE & optimistic UI</h2></div></div>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What is SSE in one sentence?</summary><div class="qa-body"><p>A browser standard for a one-way, server-to-client stream of UTF-8 text events over a single long-lived HTTP response, consumed with <code>EventSource</code>, with built-in reconnection and an event-id resume mechanism.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>SSE vs WebSocket — when each?</summary><div class="qa-body"><p>SSE for one-directional server→client streams (feeds, progress, LLM tokens) — lighter, plain HTTP, auto-reconnect, survives proxies. WebSocket for full-duplex where the client also streams to the server (chat rooms, games, collab). Argus uses SSE because the client never pushes back over the channel — user actions are normal REST POSTs.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What does an SSE frame look like on the wire?</summary><div class="qa-body"><p><code>event:</code> name, <code>data:</code> payload (we send JSON as a string), optional <code>id:</code> (the resume cursor) and <code>retry:</code>, terminated by a blank line. <code>Content-Type: text/event-stream</code>. A <code>:</code>-prefixed comment line is a heartbeat.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why do named SSE events need <code>addEventListener</code>?</summary><div class="qa-body"><p>Because <code>onmessage</code> only fires for frames with no <code>event:</code> line (the default <code>"message"</code> type). Named events (<code>event: delta</code>) are dispatched to listeners registered for that name — so Argus registers one listener per event kind.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How does a dropped connection resume with no gap or duplicate?</summary><div class="qa-body"><p>Every event carries a monotonic <code>seq</code>. The client tracks the highest seen and reconnects with <code>?since_seq=N</code>; the server replays only <code>seq &gt; N</code>. The same <code>seq</code> makes the client-side merge idempotent (dedupe by seq). Reconnect uses capped exponential backoff and skips while offline.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What is optimistic UI and what's the risk?</summary><div class="qa-body"><p>Rendering the expected result before the server confirms, so the app feels instant. The risk is divergence on failure — so you need reconciliation (replace the guess with server truth) and a rollback/error path (toast + mark failed). Never leave a guess on screen as if it were real.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How do the optimistic placeholders get dropped without a flicker?</summary><div class="qa-body"><p>The optimistic assistant reuses the real <code>messageId</code>. When the server row appears in history, <code>assistantLanded</code> flips true and the placeholders are removed — but the live-token overlay keeps rendering onto the now-real row, so the text is continuous. The displayed list is a <code>useMemo</code> derived from (history, liveText, pending), so it can't drift.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Where do you close an SSE stream in React?</summary><div class="qa-body"><p>In the <code>useEffect</code> cleanup: <code>useEffect(() =&gt; { const close = openStream(); return () =&gt; close(); }, [deps])</code>. It runs on unmount and before every dep-change re-run. Forgetting it leaks the connection and triggers stale callbacks / setState-on-unmounted warnings. Argus also keeps the teardown in a <code>closeRef</code>.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why is <code>EventSource</code> wrapped instead of used raw?</summary><div class="qa-body"><p>To control resume (cursor in the URL as <code>since_seq</code> rather than the native <code>Last-Event-ID</code> header), own the backoff, gate on <code>navigator.onLine</code>, make it SSR-safe (no-op without <code>window</code>), and make <code>done</code> authoritative so a finished stream never reconnects.</p></div></details>
+    </section>
+
+    <section id="recap" data-group="Putting it together">
+      <div class="sec-head"><div><div class="sec-kicker">The morning of</div><h2>Recap checklist</h2></div></div>
+      <div class="card">
+        <ul>
+          <li>☐ Can define SSE and contrast it with polling and WebSocket</li>
+          <li>☐ Can draw an SSE frame (<code>event/data/id</code>, blank line, <code>text/event-stream</code>)</li>
+          <li>☐ Can explain why named events need <code>addEventListener</code></li>
+          <li>☐ Can explain <code>since_seq</code> resume = persist + track + replay</li>
+          <li>☐ Can justify exponential backoff (cap + reset on open + offline gate)</li>
+          <li>☐ Can define optimistic UI and name its three required parts</li>
+          <li>☐ Can walk the <code>send()</code> order and why <code>await postChat</code> is first</li>
+          <li>☐ Can explain the no-flicker overlay (reuse real id, derive with useMemo)</li>
+          <li>☐ Can explain resume-on-refresh (persisted streaming row + startedRef)</li>
+          <li>☐ Can answer "where do you close the connection?" instantly</li>
+        </ul>
+      </div>
+      <div class="callout key"><span class="ct">Bring it home</span><p>When the SSE/streaming question comes, don't recite the protocol — tell the Argus story: "I stream LLM tokens over SSE because the flow is one-directional; I make it resumable with a <code>seq</code> cursor so a refresh never loses the reply; and I wrap it in optimistic UI so it feels instant while staying honest — the placeholder always converges on the persisted truth." That's one answer that covers transport, resilience, and UX in three sentences.</p></div>
+      <p class="footer-note"><a href="index.html">← Back to the frontend playbook</a> · This page pairs with the <b>Custom hooks &amp; optimistic UI</b> and <b>Streaming data into React (SSE)</b> sections there.</p>
+    </section>
+
+    <div class="no-results" id="noResults">No topics match your filter.</div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LangGraph Workflow · Deep Dive</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='5' cy='6' r='2.4' fill='%2356d364'/%3E%3Ccircle cx='5' cy='18' r='2.4' fill='%2356d364'/%3E%3Ccircle cx='19' cy='12' r='2.4' fill='%2356d364'/%3E%3Cpath d='M7 6h6l4 5M7 18h6l4-5' stroke='%2356d364' stroke-width='1.6' fill='none'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+<button class="menu-toggle" aria-label="Menu" onclick="document.querySelector('.sidebar').classList.toggle('open')">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+
+<div class="app">
+  <aside class="sidebar">
+    <a href="index.html#workflow" class="back-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      Back to Argus Prep
+    </a>
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#dffbe4" stroke-width="1.6"><circle cx="5" cy="6" r="2.2" fill="#dffbe4" stroke="none"/><circle cx="5" cy="18" r="2.2" fill="#dffbe4" stroke="none"/><circle cx="19" cy="12" r="2.2" fill="#dffbe4" stroke="none"/><path d="M7 6h6l4 5M7 18h6l4-5"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">LangGraph Workflow</div>
+        <div class="brand-sub">The agent graph · own it</div>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="search" id="search" placeholder="Filter topics…  (press /)" autocomplete="off" />
+    </div>
+
+    <nav id="nav"></nav>
+  </aside>
+
+  <main class="content">
+    <header class="hero">
+      <h1>The <span class="grad">LangGraph workflow</span>, line by line</h1>
+      <p>The six-node, self-correcting research graph is the most differentiated thing you built. This page goes past the diagram into the <b>real code</b>: how the graph is assembled, how state flows and accumulates, why the loop routes where it does, how nodes stay testable, and how failure and resume are handled. Know this and you can answer any LangGraph or agent-orchestration question with your own system as the example.</p>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar"><i id="progressFill"></i></div>
+        <div class="progress-label" id="progressLabel">0 of 0 sections reviewed</div>
+      </div>
+      <div class="hero-meta">
+        <span><b>Touches</b> · state machines · agents · idempotency · DI · fault tolerance</span>
+        <span><b>Pattern</b> · typed shared state + reducers + conditional edge</span>
+      </div>
+    </header>
+
+    <div class="content-inner" id="sections">
+
+    <!-- ════════════ ORIENT ════════════ -->
+    <section id="mental-model" data-group="Orient">
+      <div class="sec-head"><div><div class="sec-kicker">Start here</div><h2>The one mental model</h2></div></div>
+      <p class="lead">LangGraph is a <b>state machine for LLM workflows</b>. You declare nodes (functions), edges (what runs next), and one shared state object. The runtime drives the loop: it picks the next node, calls it, merges what it returns into the state, checkpoints, and repeats until it reaches <code>END</code>.</p>
+      <div class="callout key"><span class="ct">Say this and you've framed it</span><p>"It's not a chain — it's a <b>directed graph with a typed shared state and one conditional edge that can loop</b>. Each node is a pure-ish async function that reads the state and returns a <b>partial update</b>; the framework merges updates (last-write-wins, or via a reducer for channels that accumulate) and <b>snapshots the whole state after every super-step</b>, which is what makes it resumable."</p></div>
+      <p>Three primitives carry the whole design — internalize these names:</p>
+      <table class="tbl">
+        <tr><th>Primitive</th><th>In Argus</th><th>Why it matters</th></tr>
+        <tr><td><b>State</b> (channels)</td><td><code>GraphState</code> — a <code>TypedDict</code></td><td>The single source of truth threaded through every node</td></tr>
+        <tr><td><b>Reducer</b></td><td><code>_merge_unique_sources</code> on <code>raw_sources</code></td><td>Lets a channel <i>accumulate</i> across the loop instead of clobbering</td></tr>
+        <tr><td><b>Conditional edge</b></td><td><code>route_after_quality</code></td><td>The self-correction: loop back for more research, or finalize</td></tr>
+      </table>
+      <p>The rest of this page is those three ideas, plus the production concerns layered on top (DI, failure, checkpointing).</p>
+    </section>
+
+    <!-- ════════════ THE GRAPH ════════════ -->
+    <section id="topology" data-group="The graph">
+      <div class="sec-head"><div><div class="sec-kicker">The graph</div><h2>The shape: a linear backbone with one loop</h2></div></div>
+      <p class="lead">Draw this first. Five of the six nodes form a straight pipeline; the only branch is the quality gate, and it loops back to the <b>planner</b> — not the researcher.</p>
+<pre class="ascii">           ┌─────────┐   needs_more_research? (bounded loop)
+  START ──▶ │ planner │ ◀─────────── yes ──────────────┐
+           └────┬────┘   turns missing_areas into       │
+                ▼        fresh gap-closing questions     │
+         ┌────────────┐                                  │
+         │ researcher │  search + fetch + clean          │
+         └─────┬──────┘  → raw_sources (reducer)         │
+               ▼                                          │
+      ┌──────────────────┐                               │
+      │ signal_extractor │  funding / hiring / product…  │
+      └────────┬─────────┘                               │
+               ▼                                          │
+          ┌──────────┐                                    │
+          │ analyst  │  synthesize overview / risks…      │
+          └────┬─────┘                                    │
+               ▼                                          │
+       ┌───────────────┐                                 │
+       │ quality_check │ ───────── yes ──────────────────┘
+       └───────┬───────┘
+               │ no  (or iteration cap hit)
+               ▼
+          ┌──────────┐
+          │ reporter │  emit nine-section report → END
+          └──────────┘</pre>
+      <div class="callout info"><span class="ct">The one-breath summary</span><p>"<b>Plan</b> the questions → <b>research</b> the web → <b>extract</b> structured signals → <b>analyse</b> into prose → <b>gate</b> on quality → either loop back to plan sharper questions, or <b>report</b>." Six nodes, one branch, one accumulator.</p></div>
+    </section>
+
+    <section id="assembly" data-group="The graph">
+      <div class="sec-head"><div><div class="sec-kicker">The graph · code</div><h2>How the graph is assembled</h2></div></div>
+      <p>The whole topology is built declaratively in one function. Note the three moves: <b>add nodes (with a retry policy)</b>, <b>wire the static edges</b>, then <b>add the one conditional edge</b>.</p>
+<pre><span class="tok-c"># backend/app/workflow/graph.py</span>
+<span class="tok-k">def</span> <span class="tok-f">build_graph</span>(deps: WorkflowDeps, *, checkpointer=<span class="tok-n">None</span>):
+    retry = RetryPolicy(
+        max_attempts=deps.settings.workflow_node_retry_limit,
+        retry_on=_retry_on,            <span class="tok-c"># transient transport errors only</span>
+    )
+    builder = StateGraph(GraphState)   <span class="tok-c"># the state schema IS the graph's type</span>
+
+    nodes = {
+        <span class="tok-s">"planner"</span>: build_planner(deps),
+        <span class="tok-s">"researcher"</span>: build_researcher(deps),
+        <span class="tok-s">"signal_extractor"</span>: build_signal_extractor(deps),
+        <span class="tok-s">"analyst"</span>: build_analyst(deps),
+        <span class="tok-s">"quality_check"</span>: build_quality_check(deps),
+        <span class="tok-s">"reporter"</span>: build_reporter(deps),
+    }
+    <span class="tok-k">for</span> name, fn <span class="tok-k">in</span> nodes.items():
+        builder.add_node(name, fn, retry_policy=retry)
+
+    <span class="tok-c"># static backbone</span>
+    builder.add_edge(START, <span class="tok-s">"planner"</span>)
+    builder.add_edge(<span class="tok-s">"planner"</span>, <span class="tok-s">"researcher"</span>)
+    builder.add_edge(<span class="tok-s">"researcher"</span>, <span class="tok-s">"signal_extractor"</span>)
+    builder.add_edge(<span class="tok-s">"signal_extractor"</span>, <span class="tok-s">"analyst"</span>)
+    builder.add_edge(<span class="tok-s">"analyst"</span>, <span class="tok-s">"quality_check"</span>)
+
+    <span class="tok-c"># the one branch: loop back to planner, or go to reporter</span>
+    max_iterations = deps.settings.workflow_max_research_iterations
+    builder.add_conditional_edges(
+        <span class="tok-s">"quality_check"</span>,
+        <span class="tok-k">lambda</span> state: route_after_quality(state, max_iterations=max_iterations),
+        {<span class="tok-s">"planner"</span>: <span class="tok-s">"planner"</span>, <span class="tok-s">"reporter"</span>: <span class="tok-s">"reporter"</span>},
+    )
+    builder.add_edge(<span class="tok-s">"reporter"</span>, END)
+
+    <span class="tok-k">return</span> builder.compile(checkpointer=checkpointer)</pre>
+      <div class="callout key"><span class="ct">Three things to point out unprompted</span><p><b>(1)</b> The state schema (<code>GraphState</code>) is passed to <code>StateGraph</code> — the graph is <i>typed</i> by it. <b>(2)</b> Every node gets the same <code>RetryPolicy</code>, but it only retries <i>transient</i> errors. <b>(3)</b> The <code>checkpointer</code> is injected at <code>compile()</code> time — pass a real one in prod, omit it in tests. Same graph, swappable durability.</p></div>
+    </section>
+
+    <!-- ════════════ STATE ════════════ -->
+    <section id="state" data-group="State & reducers">
+      <div class="sec-head"><div><div class="sec-kicker">State</div><h2>The shared, typed state</h2></div></div>
+      <p class="lead">Every node reads and writes one <code>GraphState</code>. It's a <code>TypedDict(total=False)</code> — all keys optional, filled in as the run progresses. Three families of fields: <b>inputs</b>, <b>accumulating outputs</b>, and <b>control</b>.</p>
+<pre><span class="tok-c"># backend/app/workflow/state.py</span>
+<span class="tok-k">class</span> <span class="tok-f">GraphState</span>(TypedDict, total=<span class="tok-n">False</span>):
+    <span class="tok-c"># --- inputs (seeded by the runner) ---</span>
+    session_id: str
+    run_id: str
+    company_name: str
+    website: str
+    objective: str
+
+    <span class="tok-c"># --- outputs, one per node ---</span>
+    plan: list[SubQuestion]
+    raw_sources: Annotated[list[RawSource], _merge_unique_sources]  <span class="tok-c"># appended, deduped</span>
+    extracted_signals: list[BusinessSignal]
+    analysis: AnalysisBlock
+    quality: QualityVerdict
+    report: dict[str, Any]                  <span class="tok-c"># final ReportDraft dump</span>
+
+    <span class="tok-c"># --- control ---</span>
+    retry_counts: dict[str, int]
+    errors: Annotated[list[dict[str, Any]], add]          <span class="tok-c"># append-only log</span>
+    research_iteration: int                               <span class="tok-c"># bumped per loop</span>
+    researched_question_ids: Annotated[list[str], add]    <span class="tok-c"># what's been chased</span></pre>
+      <div class="callout gotcha"><span class="ct">The serialization constraint — say it before they ask</span><p>Everything in the state must be <b>JSON / msgpack-serializable</b>, because the whole dict is snapshotted into Mongo after every super-step. So <b>no live handles</b> — no DB clients, no sockets, no queues — may live in the state. Those travel separately (via a <code>RunContext</code> bound to a <code>contextvars.ContextVar</code>). This is the single most important constraint in the design.</p></div>
+      <p>The <code>TypedDict</code> gives you editor/type-checker safety without the overhead of a class per node. Each node returns a plain dict whose keys are a subset of these — never the whole state.</p>
+    </section>
+
+    <section id="reducers" data-group="State & reducers">
+      <div class="sec-head"><div><div class="sec-kicker">State · the killer detail</div><h2>Reducers: how a channel accumulates</h2></div></div>
+      <p class="lead">This is the detail that proves you understand LangGraph rather than just used it. A node returns a partial dict; LangGraph <b>merges</b> it into the running state. <b>How</b> it merges depends on the channel.</p>
+      <table class="tbl">
+        <tr><th>Channel kind</th><th>Merge behaviour</th><th>Example</th></tr>
+        <tr><td>Plain</td><td><b>Last-write-wins</b> — the new value replaces the old</td><td><code>plan</code>, <code>analysis</code>, <code>quality</code></td></tr>
+        <tr><td><code>Annotated[T, reducer]</code></td><td><b>Reducer(old, new)</b> — a merge function combines them</td><td><code>raw_sources</code>, <code>errors</code>, <code>researched_question_ids</code></td></tr>
+      </table>
+      <p>The custom reducer on <code>raw_sources</code> appends new sources but de-dupes by URL, so a second research loop <i>adds to</i> the first batch instead of overwriting it:</p>
+<pre><span class="tok-k">def</span> <span class="tok-f">_merge_unique_sources</span>(left: list[RawSource], right: list[RawSource]):
+    <span class="tok-s">"""Reducer for raw_sources: append new, de-dup by URL."""</span>
+    seen = {src[<span class="tok-s">"url"</span>] <span class="tok-k">for</span> src <span class="tok-k">in</span> left}
+    merged = list(left)
+    <span class="tok-k">for</span> src <span class="tok-k">in</span> right:
+        <span class="tok-k">if</span> src[<span class="tok-s">"url"</span>] <span class="tok-k">in</span> seen:
+            <span class="tok-k">continue</span>
+        seen.add(src[<span class="tok-s">"url"</span>])
+        merged.append(src)
+    <span class="tok-k">return</span> merged</pre>
+      <div class="callout key"><span class="ct">Why this single annotation carries the loop</span><p>When <code>quality_check</code> loops back, the researcher runs <i>again</i> and returns <i>more</i> sources. A plain channel would <b>clobber</b> the first batch — the loop would forget everything it found. The reducer keeps the <b>union</b>, deduped by URL. <b>That one <code>Annotated[...]</code> is what makes the research loop accumulate instead of forget.</b> (<code>errors</code> and <code>researched_question_ids</code> use the simpler <code>operator.add</code> reducer — plain list concatenation.)</p></div>
+      <p>For the full node-by-node picture of the state growing, see the <a href="index.html#state-evolution">"Watch the state grow" walkthrough</a> on the main prep page — this page focuses on the <i>machinery</i>; that one focuses on the <i>data</i>.</p>
+    </section>
+
+    <!-- ════════════ THE LOOP ════════════ -->
+    <section id="conditional-edge" data-group="The self-correcting loop">
+      <div class="sec-head"><div><div class="sec-kicker">The loop · crown jewel</div><h2>The conditional edge — and why it loops to the planner</h2></div></div>
+      <p class="lead">This is the part that makes it an <b>agent</b>, not a pipeline: it inspects its own output quality and decides whether to do more work. The routing function is deliberately pulled out of the node so it's unit-testable in isolation.</p>
+<pre><span class="tok-c"># backend/app/workflow/graph.py</span>
+<span class="tok-k">def</span> <span class="tok-f">route_after_quality</span>(state, *, max_iterations) -> Literal[<span class="tok-s">"planner"</span>, <span class="tok-s">"reporter"</span>]:
+    quality = state.get(<span class="tok-s">"quality"</span>)
+    iteration = state.get(<span class="tok-s">"research_iteration"</span>, <span class="tok-n">0</span>)
+    <span class="tok-k">if</span> (
+        quality
+        <span class="tok-k">and</span> quality.get(<span class="tok-s">"needs_more_research"</span>)
+        <span class="tok-k">and</span> quality.get(<span class="tok-s">"missing_areas"</span>)        <span class="tok-c"># must have a concrete target</span>
+        <span class="tok-k">and</span> iteration &lt; max_iterations          <span class="tok-c"># bounded — no infinite loop</span>
+    ):
+        <span class="tok-k">return</span> <span class="tok-s">"planner"</span>
+    <span class="tok-k">return</span> <span class="tok-s">"reporter"</span></pre>
+      <div class="callout why"><span class="ct">Why loop to the planner, not the researcher</span><p>Looping straight to the researcher would re-run it against the <b>already-researched plan</b> — every question id is already in <code>researched_question_ids</code>, so it would gather <b>nothing new</b> and burn tokens spinning. Routing to the <b>planner</b> lets it read <code>quality.missing_areas</code> and emit <b>fresh gap-closing sub-questions</b>, giving the next research pass something genuinely new to chase. <span class="muted">(This is your commit <code>a094b5a</code> — a real bug you found and fixed.)</span></p></div>
+      <div class="callout gotcha"><span class="ct">The three guards, and why each exists</span><p><b>(1) <code>needs_more_research</code></b> — the gate's own verdict. <b>(2) <code>missing_areas</code> non-empty</b> — the schema permits <code>needs_more_research=true</code> with an <i>empty</i> gap list; without a target the planner would just regenerate its original questions and loop with zero progress. <b>(3) <code>iteration &lt; max_iterations</code></b> — a hard cap (<code>workflow_max_research_iterations</code>) so a stubborn gate can't loop forever. There's also a LangGraph-level <code>recursion_limit</code> as a final backstop.</p></div>
+      <h4>How the planner uses the gap on a follow-up pass</h4>
+      <p>The planner detects it's a follow-up (existing plan + missing areas) and <b>appends</b> sharper questions rather than starting over:</p>
+<pre><span class="tok-c"># backend/app/workflow/nodes/planner.py</span>
+existing = state.get(<span class="tok-s">"plan"</span>) <span class="tok-k">or</span> []
+missing  = quality[<span class="tok-s">"missing_areas"</span>] <span class="tok-k">if</span> quality <span class="tok-k">else</span> []
+is_followup = bool(existing) <span class="tok-k">and</span> bool(missing)
+
+user = planner_user_with_gaps(..., missing) <span class="tok-k">if</span> is_followup <span class="tok-k">else</span> planner_user(...)
+result = <span class="tok-k">await</span> deps.llm.complete(PLANNER_SYSTEM, user, response_model=PlanResult, model=model)
+
+start_idx = len(existing)                <span class="tok-c"># new ids continue the numbering: q2, q3…</span>
+new_questions = [SubQuestion(id=<span class="tok-s">f"q{start_idx + i}"</span>, ...) <span class="tok-k">for</span> i, q <span class="tok-k">in</span> enumerate(result.questions)]
+<span class="tok-k">return</span> {<span class="tok-s">"plan"</span>: [*existing, *new_questions]}</pre>
+      <p>And the researcher only chases the <i>new</i> ids, so the loop never re-fetches what it already has:</p>
+<pre><span class="tok-c"># backend/app/workflow/nodes/researcher.py</span>
+already = set(state.get(<span class="tok-s">"researched_question_ids"</span>) <span class="tok-k">or</span> [])
+todo = [q <span class="tok-k">for</span> q <span class="tok-k">in</span> plan <span class="tok-k">if</span> q[<span class="tok-s">"id"</span>] <span class="tok-k">not in</span> already]   <span class="tok-c"># only the fresh questions</span>
+...
+<span class="tok-k">return</span> {
+    <span class="tok-s">"raw_sources"</span>: deduped,                          <span class="tok-c"># merged via the reducer</span>
+    <span class="tok-s">"research_iteration"</span>: iteration + <span class="tok-n">1</span>,             <span class="tok-c"># bump the loop counter</span>
+    <span class="tok-s">"researched_question_ids"</span>: [q[<span class="tok-s">"id"</span>] <span class="tok-k">for</span> q <span class="tok-k">in</span> todo],  <span class="tok-c"># appended via add reducer</span>
+}</pre>
+      <div class="callout key"><span class="ct">The whole loop in one sentence</span><p>"The quality gate flags <code>missing_areas</code> → the planner turns those gaps into <b>new</b> sub-questions → the researcher chases only the new ids and <b>appends</b> sources via the reducer → control fields (<code>research_iteration</code>, <code>researched_question_ids</code>) keep it bounded and non-repeating." That's a self-correcting agent with no wasted work.</p></div>
+    </section>
+
+    <!-- ════════════ NODES ════════════ -->
+    <section id="node-anatomy" data-group="Nodes">
+      <div class="sec-head"><div><div class="sec-kicker">Nodes</div><h2>Anatomy of a node</h2></div></div>
+      <p class="lead">Every node has the same shape: a <code>build_X(deps)</code> factory returns an <code>async def</code> closure. The closure takes the state, does its work, emits start/finish events, and returns a <b>partial dict</b>.</p>
+<pre><span class="tok-k">def</span> <span class="tok-f">build_quality_check</span>(deps: WorkflowDeps) -> NodeFn:
+    model = deps.settings.model_for_node(<span class="tok-s">"quality_check"</span>)   <span class="tok-c"># per-node model tier</span>
+
+    <span class="tok-k">async def</span> <span class="tok-f">quality_check</span>(state: GraphState) -> dict[str, Any]:
+        <span class="tok-k">async with</span> emit_node(<span class="tok-s">"quality_check"</span>) <span class="tok-k">as</span> ev:   <span class="tok-c"># brackets node_started / node_finished</span>
+            analysis = state.get(<span class="tok-s">"analysis"</span>)
+            signals  = state.get(<span class="tok-s">"extracted_signals"</span>) <span class="tok-k">or</span> []
+            user = quality_check_user(state[<span class="tok-s">"objective"</span>], render_analysis(analysis), ...)
+
+            result = <span class="tok-k">await</span> deps.llm.complete(
+                QUALITY_CHECK_SYSTEM, user,
+                response_model=QualityResult,        <span class="tok-c"># structured output → validated</span>
+                model=model,
+            )
+            ev.set_preview({<span class="tok-s">"coverage"</span>: result.coverage_score, ...})  <span class="tok-c"># streamed to UI</span>
+            <span class="tok-k">return</span> {<span class="tok-s">"quality"</span>: QualityVerdict(...), <span class="tok-s">"retry_counts"</span>: ...}   <span class="tok-c"># PARTIAL update</span>
+
+    <span class="tok-k">return</span> quality_check</pre>
+      <p>Four recurring patterns to call out:</p>
+      <ul>
+        <li><b>Factory + closure</b> — <code>build_X(deps)</code> binds dependencies once; the returned function is what LangGraph calls. Keeps deps out of the state.</li>
+        <li><b><code>emit_node(...)</code></b> — an async context manager that emits <code>node_started</code> on entry, <code>node_finished</code> (with a duration + preview) on clean exit, and <code>node_errored</code> on exception. This is what the live SSE stream renders.</li>
+        <li><b>Structured output</b> — <code>response_model=...</code> forces the LLM into a validated Pydantic schema (with a JSON-mode + repair-retry fallback for models without native schema support).</li>
+        <li><b>Return a partial</b> — never the whole state, just the keys this node produced.</li>
+      </ul>
+      <div class="callout info"><span class="ct">The one node that does no LLM work</span><p>The <b>researcher</b> is pure I/O: it searches, fetches, and cleans pages under a bounded <code>asyncio.Semaphore</code> (fetch concurrency), with per-URL failures logged into <code>errors</code> and falling back to the search snippet. It only <i>fails</i> the node if it gathered nothing at all. Good example of "fan out concurrently, degrade gracefully."</p></div>
+      <table class="tbl">
+        <tr><th>Node</th><th>Reads</th><th>Writes (its partial)</th></tr>
+        <tr><td>planner</td><td><code>objective</code>, <code>quality.missing_areas</code></td><td><code>plan</code></td></tr>
+        <tr><td>researcher</td><td><code>plan</code>, <code>researched_question_ids</code></td><td><code>raw_sources</code> <span class="muted">(accumulates)</span>, bumps <code>research_iteration</code></td></tr>
+        <tr><td>signal_extractor</td><td><code>raw_sources</code></td><td><code>extracted_signals</code></td></tr>
+        <tr><td>analyst</td><td>sources + signals</td><td><code>analysis</code></td></tr>
+        <tr><td>quality_check</td><td><code>analysis</code>, signals, source count</td><td><code>quality</code> → drives the branch</td></tr>
+        <tr><td>reporter</td><td>everything</td><td><code>report</code> → END</td></tr>
+      </table>
+    </section>
+
+    <section id="dependency-injection" data-group="Nodes">
+      <div class="sec-head"><div><div class="sec-kicker">Nodes · testability</div><h2>Capabilities, not clients (the DI story)</h2></div></div>
+      <p class="lead">Nodes never import a concrete OpenAI client or HTTP library. They close over a single <code>WorkflowDeps</code> bundle of <b>protocols</b> (interfaces). Production injects real clients; tests inject fakes — and the whole graph runs offline under pytest.</p>
+<pre><span class="tok-c"># backend/app/workflow/deps.py</span>
+<span class="tok-d">@dataclass</span>
+<span class="tok-k">class</span> <span class="tok-f">WorkflowDeps</span>:
+    llm: LLMClient            <span class="tok-c"># protocol</span>
+    search: SearchClient      <span class="tok-c"># protocol</span>
+    fetcher: Fetcher          <span class="tok-c"># protocol</span>
+    settings: Settings
+
+    <span class="tok-d">@classmethod</span>
+    <span class="tok-k">def</span> <span class="tok-f">from_settings</span>(cls, settings) -> WorkflowDeps:
+        <span class="tok-k">return</span> cls(
+            llm=OpenRouterClient(settings),
+            search=build_search_client(settings),
+            fetcher=HttpxFetcher.from_settings(settings),
+            settings=settings,
+        )</pre>
+      <div class="callout key"><span class="ct">Why this scores</span><p>It demonstrates <b>dependency inversion</b>: nodes depend on abstractions, not implementations. The payoff is concrete — <b>the entire six-node graph runs in CI with zero network calls</b> by passing fake <code>llm</code>/<code>search</code>/<code>fetcher</code>. And it dovetails with the serialization rule: deps live <i>here</i>, never in the checkpointed state.</p></div>
+    </section>
+
+    <!-- ════════════ FAILURE & RESUME ════════════ -->
+    <section id="failure" data-group="Failure & resume">
+      <div class="sec-head"><div><div class="sec-kicker">Failure</div><h2>Retries and failure handling</h2></div></div>
+      <p class="lead">Two layers of failure handling: <b>per-node retries</b> for transient hiccups, and a <b>run-level catch</b> that records a typed failure (which a later resume can pick up from).</p>
+      <h4>Node-level retry — transient only</h4>
+      <p>The <code>RetryPolicy</code> only retries errors that might actually fix themselves. A schema/validation/empty-source error is <b>deterministic</b> — retrying just wastes tokens, so those fail fast.</p>
+<pre><span class="tok-c"># only transient transport errors are worth a retry</span>
+_TRANSIENT = (httpx.HTTPError, ConnectionError, TimeoutError, asyncio.TimeoutError)
+
+<span class="tok-k">def</span> <span class="tok-f">_retry_on</span>(exc) -> bool:
+    <span class="tok-k">return</span> isinstance(exc, _TRANSIENT)</pre>
+      <h4>Run-level — record a typed failure</h4>
+      <p>The runner wraps the whole graph invocation; any uncaught error marks the run + session <code>failed</code> with a stable error <code>code</code> (e.g. <code>cost_cap_exceeded</code>) so the UI can show a meaningful reason — and resume stays possible.</p>
+<pre><span class="tok-c"># backend/app/workflow/runner.py (execute)</span>
+<span class="tok-k">try</span>:
+    final_state = <span class="tok-k">await</span> self._invoke(run_id, session_id, resume=resume)
+<span class="tok-k">except</span> Exception <span class="tok-k">as</span> exc:
+    <span class="tok-k">await</span> self._fail(run_id, session_id, exc)   <span class="tok-c"># mark failed, emit run_failed</span>
+    <span class="tok-k">return</span>
+<span class="tok-k">await</span> self._complete(run_id, session_id, final_state)</pre>
+      <div class="callout info"><span class="ct">What you'd add next (good to volunteer)</span><p>A second conditional edge for the <b>research dead-end</b> — if the researcher gathers zero sources, route to a <i>degraded report</i> node instead of failing the run. You sketched this; mentioning it shows you think about graph-level error paths, not just try/except.</p></div>
+    </section>
+
+    <section id="checkpointing" data-group="Failure & resume">
+      <div class="sec-head"><div><div class="sec-kicker">Resume</div><h2>Checkpointing & resume-from-crash</h2></div></div>
+      <p class="lead">The reason this is fault-tolerant: LangGraph snapshots the entire state to Mongo <b>after every super-step</b>, via a custom <code>MongoCheckpointer</code> implementing <code>BaseCheckpointSaver</code>, keyed by <code>thread_id == session_id</code>.</p>
+<pre><span class="tok-c"># backend/app/workflow/runner.py (_invoke)</span>
+checkpointer = MongoCheckpointer(self.db)
+graph = build_graph(self.deps, checkpointer=checkpointer)
+config = {
+    <span class="tok-s">"configurable"</span>: {<span class="tok-s">"thread_id"</span>: session_id},   <span class="tok-c"># the checkpoint key</span>
+    <span class="tok-s">"recursion_limit"</span>: self.settings.workflow_recursion_limit,
+}
+<span class="tok-k">if</span> resume:
+    <span class="tok-k">return</span> <span class="tok-k">await</span> graph.ainvoke(<span class="tok-n">None</span>, config=config)   <span class="tok-c"># None → continue from last checkpoint</span>
+<span class="tok-k">return</span> <span class="tok-k">await</span> graph.ainvoke(initial, config=config)   <span class="tok-c"># fresh run from seeded inputs</span></pre>
+      <div class="callout key"><span class="ct">The key trick: resume with <code>None</code> input</span><p>Calling <code>ainvoke(None, config=...)</code> with the <b>same <code>thread_id</code></b> tells LangGraph to <b>continue from the last checkpoint</b> rather than start over. So a crash at the analyst resumes with <code>plan</code>, <code>raw_sources</code>, and <code>extracted_signals</code> already populated — completed nodes never re-run.</p></div>
+      <h4>Why the super-step boundary?</h4>
+      <p>LangGraph executes in <b>super-steps</b> (one "tick" where the eligible nodes run). Checkpointing at that boundary means state is always <b>consistent</b> — you never persist a half-updated state mid-node. Same instinct as committing a DB transaction at a clean boundary, not mid-write.</p>
+      <div class="callout gotcha"><span class="ct">What's NOT guaranteed — say it first</span><p><b>Exactly-once external side effects.</b> A node that crashed mid-LLM-call may <b>re-issue</b> that call on resume — so it's <b>at-least-once</b>, not exactly-once. Durable <i>state</i> ≠ exactly-once <i>actions</i>. That distinction is a genuinely senior thing to volunteer. (Graceful shutdown also flips a <code>running</code> session to a resumable <code>interrupted</code> on SIGTERM, so a deploy never strands a run.)</p></div>
+      <p>The live-streaming half of recoverability — reconnecting mid-run with no gaps or duplicates — is its own mechanism: see the <a href="sse-streaming.html">SSE + sinceSeq deep dive</a>.</p>
+    </section>
+
+    <!-- ════════════ DEEPER ════════════ -->
+    <section id="why-langgraph" data-group="Going deeper">
+      <div class="sec-head"><div><div class="sec-kicker">Own the choice</div><h2>Why LangGraph (not a chain, not hand-rolled)</h2></div></div>
+      <p>A likely follow-up: "why a graph framework at all?"</p>
+      <table class="tbl">
+        <tr><th>Option</th><th>Verdict</th></tr>
+        <tr><td><b>LangGraph</b> ✅</td><td>Gives <b>typed shared state, reducers, conditional edges, and a checkpointer interface</b> out of the box — exactly the loop + resume primitives this workflow needs. The graph is explicit and inspectable.</td></tr>
+        <tr><td>A linear chain (e.g. LCEL)</td><td>Great for straight pipelines, but <b>cyclic, self-correcting control flow</b> (the quality loop) and per-step checkpointing fight the abstraction.</td></tr>
+        <tr><td>Hand-rolled orchestration</td><td>Total control, but you'd <b>re-implement state merging, retries, conditional routing, and checkpoint/resume</b> yourself — the exact things the framework already solves.</td></tr>
+      </table>
+      <div class="callout why"><span class="ct">The honest framing</span><p>"I needed a <b>cyclic</b> workflow with durable, resumable state — that's a state machine, not a chain. LangGraph gives me the state/reducer/conditional-edge/checkpointer primitives so I write <i>nodes and edges</i>, not orchestration plumbing. The cost is a framework dependency and learning its execution model (super-steps, channels) — worth it for the loop and the resume."</p></div>
+    </section>
+
+    <section id="pitfalls" data-group="Going deeper">
+      <div class="sec-head"><div><div class="sec-kicker">Gotchas</div><h2>Subtleties an interviewer might probe</h2></div></div>
+      <ul>
+        <li><b>"Why is the routing function separate from the node?"</b> — So the <i>decision</i> is a pure function of state, unit-testable without running the LLM node. The node produces the verdict; <code>route_after_quality</code> decides on it.</li>
+        <li><b>"What stops an infinite loop?"</b> — Three things: the <code>iteration &lt; max_iterations</code> guard, the empty-<code>missing_areas</code> guard, and LangGraph's <code>recursion_limit</code> backstop.</li>
+        <li><b>"Why de-dupe in <i>both</i> the researcher and the reducer?"</b> — The researcher de-dupes <i>within</i> one pass (a question and a site crawl can hit the same URL); the reducer de-dupes <i>across</i> passes. Two different scopes.</li>
+        <li><b>"Where does <code>seq</code> / the DB handle live if not in state?"</b> — In a <code>RunContext</code> carried via a <code>contextvars.ContextVar</code>, bound just before <code>ainvoke</code>. The state stays serializable; the live handles ride alongside.</li>
+        <li><b>"How do you test a node that calls an LLM?"</b> — Inject a fake <code>LLMClient</code> via <code>WorkflowDeps</code> that returns canned structured output. No network, deterministic.</li>
+      </ul>
+    </section>
+
+    <!-- ════════════ RECAP ════════════ -->
+    <section id="recap" data-group="Recap">
+      <div class="sec-head"><div><div class="sec-kicker">Recap</div><h2>Narrate the workflow in 90 seconds</h2></div></div>
+      <ol class="steps">
+        <li>"It's a <b>LangGraph state machine</b> — six nodes, a typed shared state, one conditional edge that can loop."</li>
+        <li>"Each node is an <b>async closure over injected deps</b> (protocols, so tests use fakes) that reads state and returns a <b>partial update</b>."</li>
+        <li>"LangGraph <b>merges</b> partials into the state: last-write-wins, or via a <b>reducer</b> for channels that accumulate — <code>raw_sources</code> appends-and-dedupes-by-URL."</li>
+        <li>"The <b>quality gate</b> drives the only branch. If coverage is weak it loops back to the <b>planner</b> — which turns <code>missing_areas</code> into <b>new</b> sub-questions — not the researcher, which would re-fetch the same plan."</li>
+        <li>"The loop is <b>bounded</b>: an iteration cap, an empty-gaps guard, and a recursion-limit backstop."</li>
+        <li>"State is <b>checkpointed to Mongo after every super-step</b> via a custom <code>BaseCheckpointSaver</code>, so a crash <b>resumes with <code>ainvoke(None)</code></b> from the last node — completed work isn't redone."</li>
+        <li>"Failure handling is two-layer: <b>per-node retries for transient errors only</b>, and a run-level catch that records a typed failure for resume."</li>
+        <li>"The honest edge: durable state is <b>at-least-once</b> on side effects, not exactly-once — a node can re-issue an LLM call on resume."</li>
+      </ol>
+      <div class="callout key"><span class="ct">The phrases that score</span><p>"typed shared state + reducers + conditional edge" · "nodes return partial updates, the framework merges them" · "reducer = append-and-dedupe, so the loop accumulates not clobbers" · "loop to the planner so the gap becomes new questions" · "bounded loop: iteration cap + empty-gaps guard + recursion limit" · "checkpoint after every super-step, resume with <code>None</code> input" · "deps are protocols → the whole graph runs offline in CI" · "durable state, but at-least-once side effects."</p></div>
+    </section>
+
+    <section id="qa" data-group="Recap">
+      <div class="sec-head"><div><div class="sec-kicker">Flashcards</div><h2>Rapid-fire: LangGraph workflow</h2></div></div>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What does a node return, and what does the framework do with it?</summary><div class="qa-body"><p>A node returns a <b>partial dict</b> — just the channels it produced, never the whole state. LangGraph merges it into the running state: plain channels are last-write-wins; channels annotated with a reducer combine old + new (e.g. <code>raw_sources</code> appends and de-dupes by URL).</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why does the quality loop go back to the planner, not the researcher?</summary><div class="qa-body"><p>Looping to the researcher would re-run it against the same plan — all question ids are already in <code>researched_question_ids</code>, so it gathers nothing new. The planner instead reads <code>missing_areas</code> and emits fresh gap-closing sub-questions, giving the next research pass new ground. (Commit <code>a094b5a</code>.)</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What keeps the loop from running forever?</summary><div class="qa-body"><p>Three guards: <code>research_iteration &lt; max_iterations</code> (a hard cap), <code>missing_areas</code> must be non-empty (otherwise the planner has no target and would just regenerate its original questions), and LangGraph's <code>recursion_limit</code> as a final backstop.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why can't the DB client or event bus live in the state?</summary><div class="qa-body"><p>The whole state is checkpointed (JSON/msgpack) to Mongo after every super-step, so it must stay serializable — no live handles. Those live in a <code>RunContext</code> carried via a <code>contextvars.ContextVar</code>, bound just before <code>ainvoke</code>, visible to every node.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How does resume-from-crash actually work?</summary><div class="qa-body"><p>A custom <code>MongoCheckpointer</code> (<code>BaseCheckpointSaver</code>) snapshots state after every super-step, keyed by <code>thread_id == session_id</code>. To resume, the runner calls <code>graph.ainvoke(None, config=...)</code> with the same thread id — LangGraph continues from the last checkpoint, so completed nodes don't re-run.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Which errors get retried, and why not all of them?</summary><div class="qa-body"><p>Only transient transport errors (<code>httpx.HTTPError</code>, connection/timeout) via the node <code>RetryPolicy</code>. Deterministic failures — schema/validation/empty-source — won't fix on retry, so they fail fast instead of wasting tokens. An uncaught error fails the run with a typed code, leaving resume possible.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How is the graph testable without network access?</summary><div class="qa-body"><p>Nodes are closures over <code>WorkflowDeps</code>, which holds <b>protocols</b> (<code>LLMClient</code>, <code>SearchClient</code>, <code>Fetcher</code>). Tests pass fakes returning canned structured output, and compile the graph with no checkpointer — so the whole six-node graph runs deterministically offline in CI.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What's the honest limitation of the resume guarantee?</summary><div class="qa-body"><p>It guarantees durable <b>state</b>, not exactly-once <b>side effects</b>. A node that crashed mid-LLM-call may re-issue that external call on resume — so external actions are at-least-once. Distinguishing "durable state" from "exactly-once side effects" is the senior nuance.</p></div></details>
+
+      <p class="footer-note">If you can draw the six-node graph, explain the reducer and the planner-loop, and name how checkpoint/resume works, you've covered stateful orchestration, agents, DI, and fault tolerance in one answer. <a href="index.html#workflow">← Back to the workflow section</a></p>
+    </section>
+
+    <div class="no-results" id="noResults">No topics match your filter.</div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

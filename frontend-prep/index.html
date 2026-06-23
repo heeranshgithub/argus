@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Argus · Frontend Interview Prep</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2356d364' d='M3 3h18v4H3zM3 9h11v12H3zM16 9h5v12h-5z'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+<button class="menu-toggle" aria-label="Menu" onclick="document.querySelector('.sidebar').classList.toggle('open')">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#dffbe4" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">Frontend Prep</div>
+        <div class="brand-sub">React · Next.js · Web</div>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="search" id="search" placeholder="Filter topics…  (press /)" autocomplete="off" />
+    </div>
+
+    <nav id="nav"></nav>
+  </aside>
+
+  <main class="content">
+    <header class="hero">
+      <h1>The Argus <span class="grad">frontend playbook</span></h1>
+      <p>You cleared the backend round. Now the front end — same strategy: anchor every concept to what you actually shipped in the Next.js + RTK Query + SSE app, then widen into the React, JavaScript, browser, and CSS fundamentals an interviewer will probe.</p>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar"><i id="progressFill"></i></div>
+        <div class="progress-label" id="progressLabel">0 of 0 sections reviewed</div>
+      </div>
+      <div class="hero-meta">
+        <span><b>Stack</b> · Next.js 16 App Router · RTK Query · Tailwind · ShadCN</span>
+        <span><b>Shortcut</b> · <span class="kbd">/</span> to search</span>
+      </div>
+    </header>
+
+    <div class="content-inner" id="sections">
+
+    <!-- ════════════ ORIENT ════════════ -->
+    <section id="how-to-use" data-group="Orient">
+      <div class="sec-head"><div><div class="sec-kicker">Start here</div><h2>How to walk into a frontend round</h2></div></div>
+      <p class="lead">Frontend interviews test three things: <b>(1)</b> do you understand how React actually renders and re-renders, <b>(2)</b> can you reason about the browser and JavaScript underneath the framework, and <b>(3)</b> have you made real architectural decisions (data fetching, state, performance). You have strong answers to all three in Argus.</p>
+      <div class="callout key"><span class="ct">Your edge</span><p>Most candidates fetch with <code>useEffect</code> + <code>useState</code>. You built a <b>normalized server-cache (RTK Query) with tag-based invalidation</b>, <b>SSE streaming merged via <code>useReducer</code> and deduped by sequence number</b>, <b>optimistic UI</b>, and <b>resume-on-refresh</b>. Lead with those — they're senior signals.</p></div>
+      <h4>The site map</h4>
+      <ul>
+        <li><b>Argus Frontend</b> — the app's architecture, decision by decision. Home base.</li>
+        <li><b>React Fundamentals</b> — rendering, hooks, re-renders, state.</li>
+        <li><b>JavaScript & Browser</b> — closures, the event loop, rendering path.</li>
+        <li><b>CSS & Layout</b> — box model, flexbox/grid, specificity.</li>
+        <li><b>Cross-cutting</b> — rendering strategies, performance, a11y, security, TS.</li>
+        <li><b>Rapid-fire Q&A</b> — flashcards for the morning of.</li>
+      </ul>
+    </section>
+
+    <section id="stack" data-group="Orient">
+      <div class="sec-head"><div><div class="sec-kicker">The Project</div><h2>The frontend stack, in 60 seconds</h2></div></div>
+      <p class="lead">Memorize this as your "describe your frontend" opener.</p>
+      <div class="callout key"><span class="ct">The pitch</span><p>"The frontend is <b>Next.js (App Router)</b> — server-rendered shells with client components for interactivity. All server data flows through <b>RTK Query</b>, which gives me a normalized cache with tag-based invalidation, so I never hand-manage loading/error state. Live data — workflow progress and chat tokens — arrives over <b>Server-Sent Events</b>, merged into React state through custom hooks and deduped by a sequence number so a refresh never loses or doubles an event. Forms and even env vars are validated with <b>Zod</b>. Styling is <b>Tailwind + ShadCN</b> primitives, with <b>next-themes</b> for dark mode. Resilience is built in: error/loading route boundaries, an offline banner that pauses SSE retries, de-duplicated toasts, and request-id correlation from every response back to the backend logs."</p></div>
+      <table class="tbl">
+        <tr><th>Concern</th><th>Choice</th><th>Why</th></tr>
+        <tr><td>Framework</td><td>Next.js App Router</td><td>SSR shells + file-based routing + RSC + boundaries</td></tr>
+        <tr><td>Server data</td><td>RTK Query</td><td>cache + invalidation + auto hooks, no manual fetch state</td></tr>
+        <tr><td>Live data</td><td>SSE + custom hooks</td><td>one-way streams, resumable by seq</td></tr>
+        <tr><td>Validation</td><td>Zod</td><td>one schema, runtime + static types</td></tr>
+        <tr><td>Styling</td><td>Tailwind + ShadCN</td><td>utility CSS + accessible primitives</td></tr>
+        <tr><td>Theme</td><td>next-themes</td><td>class-based dark mode, no hydration flash</td></tr>
+      </table>
+    </section>
+
+    <!-- ════════════ ARGUS FRONTEND ════════════ -->
+    <section id="nextjs" data-group="Argus Frontend">
+      <div class="sec-head"><div><div class="sec-kicker">Argus Frontend</div><h2>Next.js App Router & rendering</h2></div></div>
+      <p class="lead">The App Router is the biggest "do you actually know modern React" topic. Know the server/client split cold.</p>
+      <h4>Server Components vs Client Components</h4>
+      <p>In the App Router, components are <b>Server Components by default</b> — they render on the server, ship zero JS to the browser, and can read data directly. A component becomes a <b>Client Component</b> only when it has <code>"use client"</code> at the top — needed whenever you use state, effects, event handlers, or browser APIs.</p>
+<pre><span class="tok-c">// frontend/src/app/providers.tsx — must be a client component</span>
+<span class="tok-s">"use client"</span>;
+<span class="tok-k">import</span> { useState } <span class="tok-k">from</span> <span class="tok-s">"react"</span>;
+<span class="tok-c">// ... Redux Provider, ThemeProvider, etc. — all need the client</span></pre>
+      <div class="callout why"><span class="ct">The rule of thumb to say</span><p>"Keep components on the server by default — they're free (no JS shipped). Push <code>"use client"</code> as <b>far down the tree as possible</b>, only where you need interactivity. In Argus the root layout is a server component; <code>Providers</code> (Redux + theme) is the client boundary, and pages that stream data are client components."</p></div>
+      <h4>File-based routing & special files</h4>
+      <table class="tbl">
+        <tr><th>File</th><th>Role (in Argus)</th></tr>
+        <tr><td><code>layout.tsx</code></td><td>Shared shell — fonts, <code>&lt;Providers&gt;</code>, top nav; wraps all routes</td></tr>
+        <tr><td><code>page.tsx</code></td><td>A route's UI (<code>/sessions</code>, <code>/sessions/[id]</code>, <code>/sessions/new</code>)</td></tr>
+        <tr><td><code>loading.tsx</code></td><td>Auto-shown via Suspense while a segment loads — instant skeletons</td></tr>
+        <tr><td><code>error.tsx</code></td><td>Error boundary for a segment (client component) — catches render errors</td></tr>
+        <tr><td><code>[id]</code> folder</td><td>Dynamic route segment — the session id</td></tr>
+      </table>
+      <div class="callout info"><span class="ct">Argus detail worth dropping</span><p>The layout loads fonts via <code>next/font/google</code> (Geist + Archivo) — Next self-hosts them at build time, so there's <b>no layout shift and no extra network request</b> to Google. And <code>&lt;html suppressHydrationWarning&gt;</code> is set because <code>next-themes</code> writes the theme class before React hydrates (more in <a onclick="goTo('hydration')">Hydration</a>).</p></div>
+    </section>
+
+    <section id="rtk-query" data-group="Argus Frontend">
+      <div class="sec-head"><div><div class="sec-kicker">Argus Frontend · the crown jewel</div><h2>RTK Query: server state done right</h2></div></div>
+      <p class="lead">This is your strongest frontend talking point. RTK Query is a <b>data-fetching + caching layer</b>: you declare endpoints, it generates hooks, dedupes requests, caches by key, and invalidates by tags. You stop writing <code>useEffect</code>+<code>useState</code> fetch boilerplate entirely.</p>
+      <h4>The setup — one API, endpoints injected per feature</h4>
+<pre><span class="tok-c">// services/api.ts — the root API</span>
+<span class="tok-k">export const</span> api = createApi({
+  reducerPath: <span class="tok-s">"api"</span>,
+  baseQuery: fetchBaseQuery({ baseUrl: env.NEXT_PUBLIC_API_BASE_URL, fetchFn: trackedFetch }),
+  tagTypes: [<span class="tok-s">"Session"</span>, <span class="tok-s">"Run"</span>, <span class="tok-s">"Report"</span>, <span class="tok-s">"Chat"</span>],  <span class="tok-c">// cache tag vocabulary</span>
+  endpoints: () => ({}),
+});</pre>
+<pre><span class="tok-c">// store/index.ts — wire the API reducer + middleware into Redux</span>
+configureStore({
+  reducer: { [api.reducerPath]: api.reducer },
+  middleware: (get) => get().concat(api.middleware),  <span class="tok-c">// caching/invalidation lives here</span>
+});</pre>
+      <h4>Queries, mutations, and the magic: tag-based invalidation</h4>
+<pre><span class="tok-c">// services/sessions.ts</span>
+getSessions:   build.query({ query: () => <span class="tok-s">"/api/sessions"</span>,
+  providesTags: (r) => [{ type: <span class="tok-s">"Session"</span>, id: <span class="tok-s">"LIST"</span> }, ...] }),  <span class="tok-c">// this cache holds the LIST</span>
+createSession: build.mutation({ query: (body) => ({ url: <span class="tok-s">"/api/sessions"</span>, method: <span class="tok-s">"POST"</span>, body }),
+  invalidatesTags: [{ type: <span class="tok-s">"Session"</span>, id: <span class="tok-s">"LIST"</span> }] }),       <span class="tok-c">// creating one → refetch the LIST</span></pre>
+      <div class="callout key"><span class="ct">Explain it like this</span><p>"Each query <b>provides</b> tags describing the data it holds; each mutation <b>invalidates</b> tags. When I create a session, the mutation invalidates the <code>Session/LIST</code> tag, and RTK Query <b>automatically refetches</b> any mounted query that provided that tag. I never manually update the list — the cache graph does it. That's the whole difference between RTK Query and rolling your own fetching."</p></div>
+      <h4>What you get for free</h4>
+      <ul>
+        <li><b>Auto-generated hooks:</b> <code>useGetSessionsQuery()</code>, <code>usePostChatMutation()</code> — with <code>isLoading</code>, <code>isError</code>, <code>data</code>, <code>refetch</code>.</li>
+        <li><b>Request dedup & caching:</b> two components asking for the same session share one request and one cache entry.</li>
+        <li><b>Normalized cache</b> keyed by endpoint + args; automatic re-render only of subscribers.</li>
+        <li><b>Code-split endpoints:</b> <code>api.injectEndpoints()</code> per feature file keeps concerns separated while sharing one cache.</li>
+      </ul>
+      <div class="callout why"><span class="ct">"Why RTK Query over React Query / SWR / useEffect?"</span><p>"All solve server-state caching. I was already using Redux Toolkit, so RTK Query integrates with zero extra store — same devtools, same middleware. React Query is an excellent alternative and slightly lighter if you're not on Redux. The point I'd stress: <b>server state and client state are different problems</b> — server state needs caching, dedup, invalidation, and background refetch, which is exactly what these libraries give you and what naive <code>useEffect</code> fetching gets wrong (race conditions, waterfalls, stale data, no dedup)."</p></div>
+    </section>
+
+    <section id="client-state" data-group="Argus Frontend">
+      <div class="sec-head"><div><div class="sec-kicker">Argus Frontend</div><h2>Client state vs server state</h2></div></div>
+      <p>A distinction interviewers love. Argus splits cleanly:</p>
+      <table class="tbl">
+        <tr><th>Kind</th><th>Examples in Argus</th><th>Managed by</th></tr>
+        <tr><td><b>Server state</b></td><td>sessions, the report, chat history</td><td>RTK Query cache</td></tr>
+        <tr><td><b>Live/ephemeral state</b></td><td>streaming tokens, run events by seq</td><td>local hook state (<code>useReducer</code>/<code>useState</code>)</td></tr>
+        <tr><td><b>UI state</b></td><td>theme, open sheet, form inputs</td><td>component state / next-themes</td></tr>
+      </table>
+      <div class="callout info"><span class="ct">The Redux store is tiny on purpose</span><p>The store only holds the RTK Query cache — there's no big hand-written global reducer. That's modern Redux: "use RTK Query for server state; reach for slices only for genuinely global client state." Saying you <i>didn't</i> over-use Redux is a maturity signal.</p></div>
+    </section>
+
+    <section id="sse-client" data-group="Argus Frontend">
+      <div class="sec-head"><div><div class="sec-kicker">Argus Frontend</div><h2>Streaming data into React (SSE)</h2></div></div>
+      <p class="lead">The live features are where the interesting React patterns live. The challenge: a stream of events arriving over time must become consistent React state without losing or duplicating any.</p>
+      <h4>The pattern: useReducer + a Map keyed by seq</h4>
+<pre><span class="tok-c">// hooks/use-run-stream.ts — merge backfill + live events, deduped</span>
+<span class="tok-k">interface</span> State { bySeq: Map&lt;number, WorkflowEvent&gt;; runId: string | null; }
+
+<span class="tok-k">function</span> reducer(state, action) {
+  <span class="tok-k">switch</span> (action.type) {
+    <span class="tok-k">case</span> <span class="tok-s">"append"</span>:
+      <span class="tok-k">if</span> (state.bySeq.has(action.event.seq)) <span class="tok-k">return</span> state;  <span class="tok-c">// DEDUPE by seq → idempotent</span>
+      <span class="tok-k">const</span> bySeq = <span class="tok-k">new</span> Map(state.bySeq);
+      bySeq.set(action.event.seq, action.event);
+      <span class="tok-k">return</span> { ...state, bySeq };
+  }
+}</pre>
+      <div class="callout why"><span class="ct">Why <code>useReducer</code> here, not <code>useState</code></span><p>"The next state depends on the previous state and the update logic has branches (seed / append / clear). <code>useReducer</code> centralizes that transition logic, keeps it pure and testable, and avoids stale-closure bugs you get threading <code>setState(prev => …)</code> everywhere. <b>Reach for <code>useReducer</code> when state transitions are complex or interdependent; <code>useState</code> for simple independent values.</b>"</p></div>
+      <h4>The EventSource wrapper + manual reconnect</h4>
+<pre><span class="tok-c">// lib/sse.ts — we drive reconnection to carry the resume cursor</span>
+<span class="tok-k">let</span> lastSeq = opts.sinceSeq ?? <span class="tok-n">0</span>;
+<span class="tok-k">const</span> handle = (ev) => {
+  <span class="tok-k">const</span> event = JSON.parse(ev.data);
+  lastSeq = Math.max(lastSeq, event.seq);   <span class="tok-c">// track the cursor</span>
+  opts.onEvent(event);
+};
+source.onerror = () => {                     <span class="tok-c">// exponential backoff reconnect with since_seq</span>
+  <span class="tok-k">const</span> delay = Math.min(<span class="tok-n">1000</span> * <span class="tok-n">2</span> ** retry++, <span class="tok-n">10_000</span>);
+  setTimeout(connect, delay);
+};</pre>
+      <div class="callout key"><span class="ct">The React lifecycle bit that matters</span><p>The hook opens the stream in a <code>useEffect</code> and <b>returns a cleanup function</b> that closes it: <code>useEffect(() =&gt; { const close = openStream(...); return () =&gt; close(); }, [deps])</code>. This is the single most-tested <code>useEffect</code> concept — <b>every subscription must be torn down on unmount or dep-change</b>, or you leak connections and get "setState on unmounted component" bugs.</p></div>
+      <p class="muted">Want the full picture — the SSE wire format, <code>EventSource</code>, <code>since_seq</code> resume + backoff, and how this fuses with optimistic UI? <a href="streaming-deep-dive.html">Open the <b>SSE &amp; Optimistic UI</b> deep dive →</a></p>
+    </section>
+
+    <section id="custom-hooks" data-group="Argus Frontend">
+      <div class="sec-head"><div><div class="sec-kicker">Argus Frontend</div><h2>Custom hooks & optimistic UI</h2></div></div>
+      <p>Argus wraps each feature's behaviour in a custom hook — <code>useRunStream</code>, <code>useChatStream</code> — that returns a clean view model. This is the <b>"logic in hooks, markup in components"</b> separation interviewers like.</p>
+      <h4>Optimistic UI: render before the server confirms</h4>
+<pre><span class="tok-c">// hooks/use-chat-stream.ts — send()</span>
+<span class="tok-k">const</span> { messageId } = <span class="tok-k">await</span> postChat({ sessionId, content }).unwrap();
+setPending({ userContent: content, assistantId: messageId, ... });  <span class="tok-c">// optimistic placeholder pair</span>
+beginStream(messageId, <span class="tok-n">0</span>);   <span class="tok-c">// stream tokens immediately</span>
+<span class="tok-k">void</span> refetch();            <span class="tok-c">// reconcile with the real server rows in the background</span></pre>
+      <div class="callout why"><span class="ct">What optimistic UI is, and the risk</span><p>"Optimistic UI updates the screen <b>assuming the operation will succeed</b>, before the server responds, so the app feels instant. The risk is divergence if it fails — so you need a reconciliation/rollback path. In Argus the optimistic user+assistant placeholders are dropped once the real history rows land via refetch, and a failed reply surfaces a toast. The live tokens overlay onto the real row." This shows you know both the technique and its failure mode.</p></div>
+      <a class="page-card" href="streaming-deep-dive.html">
+        <div class="pc-k">Deep dive · new page</div>
+        <div class="pc-t">SSE &amp; Optimistic UI, taken apart →</div>
+        <div class="pc-d">The full mental model and the exact Argus code: the SSE wire format, <code>EventSource</code>, <code>since_seq</code> resumability and backoff, plus the <code>send()</code> flow, the no-flicker overlay/reconciliation, and resume-on-refresh.</div>
+        <span class="pc-go">Open the deep dive</span>
+      </a>
+      <div class="callout info"><span class="ct">Hooks discipline you can name</span><p><b>Rules of Hooks:</b> only call hooks at the top level (never in conditions/loops) and only from React functions — because React tracks hook state <b>by call order</b>. Custom hooks are just functions starting with <code>use</code> that compose other hooks. <code>useCallback</code> memoizes the <code>send</code>/<code>retry</code> functions so they're stable references passed to children.</p></div>
+    </section>
+
+    <section id="forms-validation" data-group="Argus Frontend">
+      <div class="sec-head"><div><div class="sec-kicker">Argus Frontend</div><h2>Forms, Zod validation & env safety</h2></div></div>
+      <p>Argus validates the create-session form with a <b>Zod</b> schema that mirrors the backend constraints — so bad input is rejected before it ever hits the API.</p>
+<pre><span class="tok-c">// schemas/session.ts — one schema, two outputs</span>
+<span class="tok-k">export const</span> sessionCreateSchema = z.object({
+  companyName: z.string().trim().min(<span class="tok-n">1</span>, <span class="tok-s">"Company name is required"</span>).max(<span class="tok-n">200</span>),
+  website: z.string().trim().url(<span class="tok-s">"Enter a valid URL"</span>),
+  objective: z.string().trim().min(<span class="tok-n">1</span>).max(<span class="tok-n">2000</span>),
+});
+<span class="tok-k">export type</span> SessionCreateInput = z.infer&lt;<span class="tok-k">typeof</span> sessionCreateSchema&gt;;  <span class="tok-c">// static type FROM the schema</span></pre>
+      <div class="callout key"><span class="ct">The Zod superpower to mention</span><p>"<code>z.infer</code> derives the <b>TypeScript type from the runtime schema</b>, so validation rules and types can never drift apart — one source of truth. I even validate <code>NEXT_PUBLIC_*</code> env vars with Zod <b>at import time</b>, so a misconfigured build fails fast with a clear message instead of erroring deep inside a request."</p></div>
+      <h4>Controlled vs uncontrolled inputs (they'll ask)</h4>
+      <p><b>Controlled:</b> React state is the single source of truth — <code>&lt;input value={x} onChange={e =&gt; setX(e.target.value)}&gt;</code>. <b>Uncontrolled:</b> the DOM holds the value, you read it via a <code>ref</code>. Controlled is the default for validated forms (you can validate on every keystroke); uncontrolled is lighter for simple/native cases.</p>
+    </section>
+
+    <section id="styling" data-group="Argus Frontend">
+      <div class="sec-head"><div><div class="sec-kicker">Argus Frontend</div><h2>Tailwind, ShadCN & theming</h2></div></div>
+      <h4>Tailwind = utility-first CSS</h4>
+      <p>Instead of writing CSS files, you compose utility classes in markup: <code>className="min-h-full flex flex-col"</code>. Pros: no naming, no dead CSS, consistent spacing scale, styles co-located with markup. Con: verbose class strings. It's <b>not</b> inline styles — it's a constrained design-token system compiled to a tiny CSS file (unused classes are purged → small bundle).</p>
+      <h4>ShadCN = copy-in accessible primitives</h4>
+      <p>ShadCN isn't a dependency you import — it's components (Button, Dialog, Tabs…) you <b>copy into your repo</b>, built on Radix UI for accessibility (keyboard nav, focus traps, ARIA). You own and can edit them. Argus uses these for the consistent, accessible UI kit.</p>
+      <h4>Dark mode with next-themes</h4>
+<pre><span class="tok-c">// providers.tsx</span>
+&lt;ThemeProvider attribute=<span class="tok-s">"class"</span> defaultTheme=<span class="tok-s">"light"</span> enableSystem={<span class="tok-n">false</span>} disableTransitionOnChange&gt;</pre>
+      <p>It toggles a <code>class="dark"</code> on <code>&lt;html&gt;</code>; Tailwind's <code>dark:</code> variants then apply. <code>disableTransitionOnChange</code> prevents a color-transition flash when switching.</p>
+    </section>
+
+    <section id="resilience" data-group="Argus Frontend">
+      <div class="sec-head"><div><div class="sec-kicker">Argus Frontend</div><h2>Error handling & resilience</h2></div></div>
+      <p>The frontend is hardened the same way the backend is — good to enumerate:</p>
+      <ul>
+        <li><b>Route error/loading boundaries</b> (<code>error.tsx</code>/<code>loading.tsx</code>) — a thrown error in a segment shows a recoverable fallback, not a white screen.</li>
+        <li><b>Offline banner</b> that pauses SSE reconnect attempts when <code>navigator.onLine === false</code> (don't hammer a dead network).</li>
+        <li><b>De-duplicated toasts</b> (capped stack) so a burst of errors doesn't spam.</li>
+        <li><b>Client-error reporter</b> — uncaught client errors are sent to a backend sink.</li>
+        <li><b>Request-id correlation</b> — a wrapped <code>fetch</code> records each response's <code>x-request-id</code>, so a UI error maps to the exact backend log line.</li>
+      </ul>
+      <div class="callout why"><span class="ct">Error boundaries — the concept</span><p>"A React <b>error boundary</b> catches render-time errors in its subtree and shows a fallback instead of unmounting the whole app. In the App Router, <code>error.tsx</code> is a per-segment boundary (it must be a client component, and it receives a <code>reset()</code> to retry). Note: boundaries catch <i>render</i> errors, not async/event-handler errors — those you handle with try/catch + toasts, which is what the chat <code>send()</code> does."</p></div>
+    </section>
+
+    <!-- ════════════ REACT FUNDAMENTALS ════════════ -->
+    <section id="rendering" data-group="React Fundamentals">
+      <div class="sec-head"><div><div class="sec-kicker">React</div><h2>The rendering model & reconciliation</h2></div></div>
+      <p class="lead">If you understand <i>why</i> React re-renders, most React questions answer themselves.</p>
+      <h4>Render → reconcile → commit</h4>
+      <ol class="steps">
+        <li><b>Render:</b> React calls your component function, producing a tree of elements (the "virtual DOM" — a lightweight JS description of the UI).</li>
+        <li><b>Reconcile (diff):</b> React compares the new tree to the previous one to find the minimal set of real DOM changes.</li>
+        <li><b>Commit:</b> React applies just those changes to the actual DOM.</li>
+      </ol>
+      <div class="callout why"><span class="ct">Why keys matter</span><p>"When rendering a list, React uses the <code>key</code> to match elements across renders. A <b>stable, unique key</b> lets it tell which items moved, were added, or removed — without keys (or with index keys on a reorderable list) it mis-matches and you get wrong state/DOM reuse and subtle bugs. Never use the array index as a key for a list that can reorder or change length."</p></div>
+      <h4>What triggers a re-render</h4>
+      <ul>
+        <li>State change (<code>setState</code>), or a parent re-rendering (children re-render by default).</li>
+        <li>Context value change (all consumers re-render).</li>
+        <li>A re-render does <b>not</b> mean a DOM update — reconciliation may find nothing changed.</li>
+      </ul>
+    </section>
+
+    <section id="hooks" data-group="React Fundamentals">
+      <div class="sec-head"><div><div class="sec-kicker">React</div><h2>Hooks deep dive</h2></div></div>
+      <table class="tbl">
+        <tr><th>Hook</th><th>Use it for</th><th>Gotcha</th></tr>
+        <tr><td><code>useState</code></td><td>local, independent values</td><td>updates are async/batched; use updater fn for prev-based updates</td></tr>
+        <tr><td><code>useEffect</code></td><td>side effects (subscriptions, fetches, DOM)</td><td>runs after paint; <b>cleanup + deps</b> are everything</td></tr>
+        <tr><td><code>useReducer</code></td><td>complex/interdependent state transitions</td><td>keep the reducer pure</td></tr>
+        <tr><td><code>useMemo</code></td><td>memoize an expensive computed value</td><td>don't overuse — it has its own cost</td></tr>
+        <tr><td><code>useCallback</code></td><td>memoize a function identity</td><td>only helps if the child is memoized / dep-compared</td></tr>
+        <tr><td><code>useRef</code></td><td>mutable value that doesn't trigger re-render; DOM refs</td><td>changing <code>.current</code> won't re-render</td></tr>
+        <tr><td><code>useContext</code></td><td>read shared values without prop-drilling</td><td>every consumer re-renders on value change</td></tr>
+      </table>
+      <h4>useEffect: the dependency array (most-asked)</h4>
+<pre>useEffect(() => { <span class="tok-c">/* run */</span>  <span class="tok-k">return</span> () => { <span class="tok-c">/* cleanup */</span> }; }, [deps]);
+<span class="tok-c">// []        → run once on mount, cleanup on unmount</span>
+<span class="tok-c">// [a, b]    → re-run whenever a or b change (cleanup runs before each re-run)</span>
+<span class="tok-c">// (omitted) → run after EVERY render (rarely what you want)</span></pre>
+      <div class="callout gotcha"><span class="ct">The stale closure — the classic hooks bug</span><p>An effect/callback "captures" the variables from the render it was created in. If you omit a dependency, it keeps seeing the <b>old</b> value forever. Fix: list all referenced values in the deps array, or use a functional updater / ref. This is why Argus's hooks carefully list deps like <code>[sessionId, refetch, beginStream]</code> and wrap callbacks in <code>useCallback</code>.</p></div>
+    </section>
+
+    <section id="performance-react" data-group="React Fundamentals">
+      <div class="sec-head"><div><div class="sec-kicker">React</div><h2>Re-renders & performance</h2></div></div>
+      <p class="lead">"This component re-renders too much — how do you fix it?" Have a crisp toolkit.</p>
+      <table class="tbl">
+        <tr><th>Tool</th><th>What it does</th></tr>
+        <tr><td><code>React.memo(Component)</code></td><td>skips re-render if props are shallowly equal</td></tr>
+        <tr><td><code>useMemo(fn, deps)</code></td><td>caches a computed value across renders</td></tr>
+        <tr><td><code>useCallback(fn, deps)</code></td><td>caches a function's identity (so memoized children don't re-render)</td></tr>
+        <tr><td>Lifting/colocating state</td><td>keep state as local as possible so fewer components re-render</td></tr>
+        <tr><td>Virtualization</td><td>render only visible list rows (react-window) for huge lists</td></tr>
+      </table>
+      <div class="callout why"><span class="ct">The mental model — referential equality</span><p>"React compares props by <b>reference</b>. Objects/arrays/functions created during render are <b>new every time</b>, so a memoized child still re-renders unless you stabilize them with <code>useMemo</code>/<code>useCallback</code>. But these aren't free — premature memoization adds complexity and its own compute. <b>Measure first</b> (React DevTools Profiler), then memoize the proven hot path. Often the better fix is moving state down or splitting the component."</p></div>
+      <div class="callout info"><span class="ct">Note: React Compiler</span><p>If asked about the future: React 19's Compiler auto-memoizes, reducing manual <code>useMemo</code>/<code>useCallback</code>. Worth a sentence to show you're current — but the manual model is still what's tested.</p></div>
+    </section>
+
+    <section id="state-mgmt" data-group="React Fundamentals">
+      <div class="sec-head"><div><div class="sec-kicker">React</div><h2>State management landscape</h2></div></div>
+      <p>Know the ladder and when to climb it:</p>
+      <ol class="steps">
+        <li><b>Local state</b> (<code>useState</code>/<code>useReducer</code>) — default. Keep it here if only one component cares.</li>
+        <li><b>Lift state up</b> — when siblings must share, move it to the common parent and pass down.</li>
+        <li><b>Context</b> — for low-frequency global values (theme, auth user). <b>Not</b> for high-frequency updates (it re-renders all consumers).</li>
+        <li><b>A store</b> (Redux/Zustand/Jotai) — genuinely global, frequently-updated, or complex client state.</li>
+        <li><b>A server-cache</b> (RTK Query/React Query) — anything that lives on the server. <i>Don't</i> put server data in Redux by hand.</li>
+      </ol>
+      <div class="callout gotcha"><span class="ct">Context is not a state manager</span><p>Common interview trap: "use Context instead of Redux." Context is a <b>transport</b> (avoids prop-drilling), not a state container, and any value change re-renders every consumer. For frequently-changing global state it can cause perf problems Redux/Zustand avoid with selective subscriptions.</p></div>
+    </section>
+
+    <!-- ════════════ JS & BROWSER ════════════ -->
+    <section id="js-core" data-group="JavaScript &amp; Browser">
+      <div class="sec-head"><div><div class="sec-kicker">JavaScript</div><h2>JavaScript core you must know</h2></div></div>
+      <h4>Closures</h4>
+      <p>A function "remembers" the variables from the scope where it was <b>defined</b>, even after that scope returns. Powers hooks (state persists between renders via closures), module privacy, and event handlers. Also the source of the React stale-closure bug.</p>
+      <h4><code>this</code></h4>
+      <p>Determined by <b>how a function is called</b>, not where it's defined: method call → the object; standalone → undefined/global (strict); <code>call/apply/bind</code> → explicit; <b>arrow functions</b> → inherit <code>this</code> from the enclosing scope (why arrows are used for callbacks).</p>
+      <h4>Prototypes</h4>
+      <p>Objects delegate to a prototype chain for properties they don't own — JS's inheritance mechanism. <code>class</code> is syntax sugar over prototypes.</p>
+      <h4>Promises & async/await</h4>
+      <p>A Promise is a value that resolves later (pending → fulfilled/rejected). <code>async/await</code> is sugar over promises for readable sequential async code; <code>await</code> pauses the function until the promise settles. Know <code>Promise.all</code> (parallel, fail-fast), <code>allSettled</code> (wait all), <code>race</code>.</p>
+      <h4>Quick hits</h4>
+      <ul>
+        <li><b><code>==</code> vs <code>===</code>:</b> <code>===</code> no type coercion — always prefer it.</li>
+        <li><b><code>var</code>/<code>let</code>/<code>const</code>:</b> <code>var</code> is function-scoped + hoisted; <code>let</code>/<code>const</code> block-scoped with a temporal dead zone.</li>
+        <li><b>Event delegation:</b> attach one listener to a parent and use bubbling, instead of N child listeners.</li>
+        <li><b>Spread/destructuring, optional chaining <code>?.</code>, nullish <code>??</code></b> — daily idioms.</li>
+      </ul>
+    </section>
+
+    <section id="event-loop" data-group="JavaScript &amp; Browser">
+      <div class="sec-head"><div><div class="sec-kicker">Browser</div><h2>The event loop</h2></div></div>
+      <p class="lead">A near-guaranteed question. JavaScript is single-threaded; the event loop is how it does async without blocking.</p>
+      <pre class="ascii">  Call Stack (runs sync code)
+       │  when empty, the loop pulls the next task ↓
+  ┌────┴─────────────────────────────────────────┐
+  │  Microtask queue   (Promises, queueMicrotask) │ ← drained FULLY first
+  │  Macrotask queue   (setTimeout, events, I/O)  │ ← then ONE macrotask
+  └────────────────────────────────────────────────┘</pre>
+      <div class="callout key"><span class="ct">The rule that answers the trick question</span><p>After each macrotask (and after the current sync code), the engine <b>drains the entire microtask queue before the next macrotask</b>. So a <code>Promise.then</code> always runs before a <code>setTimeout(…, 0)</code> queued at the same time. Classic output ordering:</p>
+<pre>console.log(<span class="tok-s">"1"</span>);
+setTimeout(() => console.log(<span class="tok-s">"2"</span>), <span class="tok-n">0</span>);   <span class="tok-c">// macrotask</span>
+Promise.resolve().then(() => console.log(<span class="tok-s">"3"</span>)); <span class="tok-c">// microtask</span>
+console.log(<span class="tok-s">"4"</span>);
+<span class="tok-c">// → 1, 4, 3, 2</span></pre></div>
+    </section>
+
+    <section id="browser-render" data-group="JavaScript &amp; Browser">
+      <div class="sec-head"><div><div class="sec-kicker">Browser</div><h2>How the browser renders a page</h2></div></div>
+      <h4>The critical rendering path</h4>
+      <p>HTML → <b>DOM</b>; CSS → <b>CSSOM</b>; together → <b>Render Tree</b> → <b>Layout</b> (compute geometry) → <b>Paint</b> (fill pixels) → <b>Composite</b> (layer the painted pieces).</p>
+      <h4>Reflow vs repaint (perf)</h4>
+      <ul>
+        <li><b>Reflow (layout):</b> geometry changed (size, position, adding nodes) — expensive, recomputes layout. Triggered by reading <code>offsetHeight</code> mid-write, changing width, etc.</li>
+        <li><b>Repaint:</b> visual-only change (color) — cheaper, no layout.</li>
+        <li><b>Composite-only</b> (transform/opacity) — cheapest, GPU; prefer animating these.</li>
+      </ul>
+      <div class="callout why"><span class="ct">render-blocking & why it matters</span><p>CSS is render-blocking (the browser won't paint until CSSOM is ready); <code>&lt;script&gt;</code> is parser-blocking unless <code>async</code>/<code>defer</code>. This is why critical CSS goes in <code>&lt;head&gt;</code> and scripts are deferred — and why frameworks like Next code-split and stream HTML.</p></div>
+      <h4>Debounce vs throttle</h4>
+      <p><b>Debounce:</b> wait until activity stops, then fire once (search-as-you-type). <b>Throttle:</b> fire at most once per interval (scroll/resize handlers). Both prevent flooding expensive work — a frequent live-coding ask.</p>
+    </section>
+
+    <!-- ════════════ CSS ════════════ -->
+    <section id="css-layout" data-group="CSS &amp; Layout">
+      <div class="sec-head"><div><div class="sec-kicker">CSS</div><h2>Box model, flexbox & grid</h2></div></div>
+      <h4>The box model</h4>
+      <p>Every element is content → padding → border → margin. <code>box-sizing: border-box</code> (the modern default) makes <code>width</code> include padding + border, so sizing is predictable. Be ready to explain margin collapsing.</p>
+      <h4>Flexbox vs Grid (when to use which)</h4>
+      <table class="tbl">
+        <tr><th>Flexbox</th><th>Grid</th></tr>
+        <tr><td><b>One dimension</b> (a row or a column)</td><td><b>Two dimensions</b> (rows and columns together)</td></tr>
+        <tr><td>Nav bars, toolbars, centering, distributing space</td><td>Page layouts, card galleries, anything tabular</td></tr>
+        <tr><td><code>justify-content</code> (main axis), <code>align-items</code> (cross axis)</td><td><code>grid-template-columns</code>, <code>gap</code>, <code>fr</code> units</td></tr>
+      </table>
+      <p class="muted">This study site itself uses CSS Grid for the sidebar+content shell and flexbox for the nav rows.</p>
+      <h4>Centering (the perennial)</h4>
+<pre><span class="tok-c">/* the modern answer */</span>
+.parent { display: flex; align-items: center; justify-content: center; }
+<span class="tok-c">/* or grid */</span>
+.parent { display: grid; place-items: center; }</pre>
+    </section>
+
+    <section id="css-specificity" data-group="CSS &amp; Layout">
+      <div class="sec-head"><div><div class="sec-kicker">CSS</div><h2>Specificity, position & responsive</h2></div></div>
+      <h4>Specificity</h4>
+      <p>Which rule wins when several target the same element. Weight order: <b>inline style &gt; id &gt; class/attribute/pseudo-class &gt; element/pseudo-element</b>. Ties → the later rule wins. <code>!important</code> overrides all (avoid it). Tailwind sidesteps most specificity fights by using single-class utilities.</p>
+      <h4>position</h4>
+      <table class="tbl">
+        <tr><td><code>static</code></td><td>default, in normal flow</td></tr>
+        <tr><td><code>relative</code></td><td>offset from its normal spot; creates a positioning context</td></tr>
+        <tr><td><code>absolute</code></td><td>removed from flow, positioned to nearest positioned ancestor</td></tr>
+        <tr><td><code>fixed</code></td><td>positioned to the viewport (e.g. this site's sticky sidebar)</td></tr>
+        <tr><td><code>sticky</code></td><td>relative until a scroll threshold, then fixed</td></tr>
+      </table>
+      <h4>Responsive design</h4>
+      <p>Mobile-first media queries (<code>@media (min-width: …)</code>), fluid units (<code>%</code>, <code>rem</code>, <code>vw</code>, <code>clamp()</code>), flexible images, and a <code>&lt;meta viewport&gt;</code> tag. Tailwind's responsive prefixes (<code>md:</code>, <code>lg:</code>) are media queries under the hood.</p>
+    </section>
+
+    <!-- ════════════ CROSS-CUTTING ════════════ -->
+    <section id="rendering-strategies" data-group="Cross-cutting">
+      <div class="sec-head"><div><div class="sec-kicker">Rendering</div><h2>CSR · SSR · SSG · ISR · RSC</h2></div></div>
+      <p class="lead">A core Next.js question. Know the tradeoffs of where and when HTML is built.</p>
+      <table class="tbl">
+        <tr><th>Strategy</th><th>HTML built…</th><th>Best for</th></tr>
+        <tr><td><b>CSR</b> (client-side)</td><td>in the browser after JS loads</td><td>private dashboards; worst SEO + slow first paint</td></tr>
+        <tr><td><b>SSR</b> (server-side)</td><td>on the server, per request</td><td>fresh, personalized, SEO-friendly pages</td></tr>
+        <tr><td><b>SSG</b> (static)</td><td>once, at build time</td><td>blogs, docs, marketing — fastest, CDN-cacheable</td></tr>
+        <tr><td><b>ISR</b> (incremental)</td><td>static + periodic background rebuild</td><td>mostly-static pages that change occasionally</td></tr>
+        <tr><td><b>RSC</b> (server components)</td><td>on the server, ship zero JS for those parts</td><td>App Router default; less client JS</td></tr>
+      </table>
+      <div class="callout key"><span class="ct">The tradeoff in one line</span><p>"It's <b>freshness vs speed/cost</b>. Static is fastest and cacheable but can go stale; SSR is always fresh but costs a server render per request; ISR splits the difference. RSC reduces the JS shipped to the client regardless. In Argus the shells render on the server and the live, user-specific data streams into client components — so I get fast first paint plus real-time data."</p></div>
+    </section>
+
+    <section id="hydration" data-group="Cross-cutting">
+      <div class="sec-head"><div><div class="sec-kicker">Rendering</div><h2>Hydration (and its pitfalls)</h2></div></div>
+      <p><b>Hydration</b> is React attaching event listeners and state to server-rendered HTML, making the static markup interactive. The HTML appears fast (good first paint); hydration makes it work.</p>
+      <div class="callout gotcha"><span class="ct">Hydration mismatch — a real bug you handled</span><p>If the server-rendered HTML differs from what the client renders on first pass, React warns and may discard the server HTML. Causes: <code>Date.now()</code>/<code>Math.random()</code> in render, or reading <code>localStorage</code>/theme before mount. Argus sets <code>&lt;html suppressHydrationWarning&gt;</code> precisely because <code>next-themes</code> sets the theme class on <code>&lt;html&gt;</code> before React hydrates — an intentional, known mismatch on that attribute.</p></div>
+    </section>
+
+    <section id="web-perf" data-group="Cross-cutting">
+      <div class="sec-head"><div><div class="sec-kicker">Performance</div><h2>Web performance & Core Web Vitals</h2></div></div>
+      <h4>Core Web Vitals</h4>
+      <table class="tbl">
+        <tr><td><b>LCP</b> (Largest Contentful Paint)</td><td>loading — biggest element painted; target &lt; 2.5s</td></tr>
+        <tr><td><b>INP</b> (Interaction to Next Paint)</td><td>responsiveness — replaced FID; target &lt; 200ms</td></tr>
+        <tr><td><b>CLS</b> (Cumulative Layout Shift)</td><td>visual stability — unexpected movement; target &lt; 0.1</td></tr>
+      </table>
+      <h4>The optimization toolkit</h4>
+      <ul>
+        <li><b>Ship less JS:</b> code splitting + lazy loading (<code>next/dynamic</code>, <code>React.lazy</code>), tree shaking, RSC.</li>
+        <li><b>Images:</b> <code>next/image</code> (lazy, responsive, modern formats), explicit dimensions to avoid CLS.</li>
+        <li><b>Fonts:</b> self-host + <code>font-display: swap</code> (Argus uses <code>next/font</code>).</li>
+        <li><b>Caching/CDN:</b> static assets at the edge; HTTP caching headers.</li>
+        <li><b>Defer non-critical work,</b> debounce/throttle handlers, virtualize long lists.</li>
+      </ul>
+      <div class="callout info"><span class="ct">Argus angle</span><p>You already practice several: <code>next/font</code> (no layout shift, no extra request), code-split RTK Query endpoints, server components shipping zero JS, and skeletons via <code>loading.tsx</code> for perceived speed.</p></div>
+    </section>
+
+    <section id="a11y" data-group="Cross-cutting">
+      <div class="sec-head"><div><div class="sec-kicker">Quality</div><h2>Accessibility (a11y)</h2></div></div>
+      <ul>
+        <li><b>Semantic HTML first</b> — <code>&lt;button&gt;</code>, <code>&lt;nav&gt;</code>, <code>&lt;main&gt;</code>, headings in order. A real button is keyboard- and screen-reader-accessible for free; a <code>&lt;div onClick&gt;</code> is not.</li>
+        <li><b>ARIA</b> only to fill gaps semantic HTML can't (roles, <code>aria-label</code>, <code>aria-live</code> for streaming updates).</li>
+        <li><b>Keyboard navigation</b> — everything operable without a mouse; visible focus states; logical tab order; focus traps in modals.</li>
+        <li><b>Color contrast</b> (WCAG AA ≥ 4.5:1 for text), don't rely on color alone.</li>
+      </ul>
+      <div class="callout info"><span class="ct">Why ShadCN/Radix helps</span><p>Argus's UI primitives are built on Radix, which handles focus management, ARIA roles, and keyboard interaction for dialogs/tabs/tooltips out of the box — accessibility you'd otherwise hand-roll and get wrong.</p></div>
+    </section>
+
+    <section id="security" data-group="Cross-cutting">
+      <div class="sec-head"><div><div class="sec-kicker">Quality</div><h2>Frontend security</h2></div></div>
+      <table class="tbl">
+        <tr><th>Threat</th><th>What it is</th><th>Defense</th></tr>
+        <tr><td><b>XSS</b></td><td>injecting malicious script (e.g. via user content)</td><td>React escapes by default; avoid <code>dangerouslySetInnerHTML</code>, sanitize if you must; CSP header</td></tr>
+        <tr><td><b>CSRF</b></td><td>forged requests using your cookies</td><td>SameSite cookies, CSRF tokens, prefer token auth headers</td></tr>
+        <tr><td><b>CORS</b></td><td>browser blocks cross-origin requests by default</td><td>server sends <code>Access-Control-Allow-*</code> for allowed origins</td></tr>
+        <tr><td>Secrets in bundle</td><td>anything in client JS is public</td><td>only <code>NEXT_PUBLIC_*</code> is exposed; keep secrets server-side</td></tr>
+      </table>
+      <div class="callout why"><span class="ct">React's built-in XSS defense</span><p>"React escapes any string you interpolate into JSX, so <code>{userInput}</code> can't inject markup — that's the main reason XSS is rare in React apps. The escape hatch is <code>dangerouslySetInnerHTML</code> (named to scare you); if I ever render HTML I'd sanitize it first (DOMPurify) and lock things down with a Content-Security-Policy."</p></div>
+    </section>
+
+    <section id="typescript" data-group="Cross-cutting">
+      <div class="sec-head"><div><div class="sec-kicker">Tooling</div><h2>TypeScript for frontend</h2></div></div>
+      <p>Argus is fully typed. Be ready for the basics:</p>
+      <ul>
+        <li><b><code>interface</code> vs <code>type</code>:</b> both describe shapes; interfaces extend/merge, types do unions/intersections. Either is fine; be consistent.</li>
+        <li><b>Generics:</b> reusable typed containers — e.g. RTK Query's <code>build.query&lt;Result, Arg&gt;</code> types the response and the argument.</li>
+        <li><b>Union & narrowing:</b> <code>status: "streaming" | "complete" | "failed"</code> + checks the compiler follows.</li>
+        <li><b>Derive types from runtime:</b> <code>z.infer&lt;typeof schema&gt;</code> — Argus's pattern so types and validation never drift.</li>
+        <li><b><code>unknown</code> vs <code>any</code>:</b> <code>unknown</code> forces you to narrow before use (safe); <code>any</code> disables checking (avoid).</li>
+      </ul>
+    </section>
+
+    <!-- ════════════ RAPID FIRE ════════════ -->
+    <section id="qa-argus" data-group="Rapid-fire Q&amp;A">
+      <div class="sec-head"><div><div class="sec-kicker">Flashcards</div><h2>Rapid-fire: the Argus frontend</h2></div></div>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How do you fetch and cache server data?</summary><div class="qa-body"><p>RTK Query. I declare endpoints (queries/mutations) that get auto-generated hooks with loading/error/data. Queries <code>provide</code> cache tags; mutations <code>invalidate</code> them, so e.g. creating a session invalidates <code>Session/LIST</code> and any mounted list query refetches automatically. It also dedupes identical requests and shares one normalized cache. No manual useEffect fetching.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How do live workflow events become React state without dupes?</summary><div class="qa-body"><p>A custom hook opens an SSE stream and feeds events into a <code>useReducer</code> whose state is a <code>Map</code> keyed by the event's <code>seq</code>. The append action ignores any seq already present, so backfill + live merges are idempotent — no duplicates. The effect returns a cleanup that closes the stream on unmount/dep-change.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Server Components vs Client Components — when each?</summary><div class="qa-body"><p>Server Components are the default: they render on the server, ship no JS, and can read data directly — use for static/shell content. Add <code>"use client"</code> only where you need state, effects, event handlers, or browser APIs. Push the client boundary as far down as possible. In Argus the layout is server; Providers and streaming pages are client.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What's optimistic UI and how did you handle failure?</summary><div class="qa-body"><p>Rendering the result before the server confirms, so the app feels instant. On send I show optimistic user+assistant placeholders and start streaming immediately, then refetch to reconcile with the real rows (placeholders drop once they land). A failed reply surfaces a toast and is marked failed — so the optimistic state always converges with the truth.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why useReducer over useState in the stream hook?</summary><div class="qa-body"><p>Because the next state depends on the previous one and the transitions branch (seed/append/clear with seq-dedupe). useReducer centralizes that as a pure, testable function and avoids stale-closure bugs. useState is for simple independent values.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How does one Zod schema validate forms and types?</summary><div class="qa-body"><p>I write the schema once (e.g. sessionCreateSchema) for runtime validation, and use <code>z.infer&lt;typeof schema&gt;</code> to derive the TypeScript type from it — so rules and types can't drift. I also validate NEXT_PUBLIC env vars with Zod at import time so misconfig fails the build fast.</p></div></details>
+    </section>
+
+    <section id="qa-general" data-group="Rapid-fire Q&amp;A">
+      <div class="sec-head"><div><div class="sec-kicker">Flashcards</div><h2>Rapid-fire: fundamentals</h2></div></div>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What triggers a re-render, and does it always touch the DOM?</summary><div class="qa-body"><p>A state change, a parent re-rendering, or a consumed context value changing. No — a re-render produces a new virtual tree; reconciliation diffs it against the previous one and only commits actual DOM changes. A re-render with identical output touches no DOM.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Output order: log, setTimeout 0, Promise.then, log?</summary><div class="qa-body"><p>Sync logs first, then all microtasks (the Promise), then macrotasks (setTimeout). So <code>1, 4, 3, 2</code>. The loop drains the entire microtask queue before the next macrotask.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>useMemo vs useCallback?</summary><div class="qa-body"><p>useMemo caches a computed <i>value</i>; useCallback caches a <i>function identity</i> (<code>useCallback(fn,d)</code> ≈ <code>useMemo(() =&gt; fn, d)</code>). Both stabilize references so memoized children don't re-render. Don't overuse — memoization has its own cost; measure first.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Flexbox or Grid?</summary><div class="qa-body"><p>Flexbox for one-dimensional layout (a row or column — navbars, centering, distributing space). Grid for two-dimensional layout (rows and columns together — page layouts, card galleries). They compose: grid for the page, flex inside cells.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why is the array index a bad list key?</summary><div class="qa-body"><p>If the list reorders, inserts, or deletes, index keys make React mis-match elements across renders — it reuses the wrong DOM/state, causing visual bugs and lost input focus. Use a stable unique id from the data.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Debounce vs throttle?</summary><div class="qa-body"><p>Debounce waits until activity stops then fires once (search input). Throttle fires at most once per interval (scroll/resize). Both cap how often expensive work runs in response to rapid events.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>CSR vs SSR vs SSG?</summary><div class="qa-body"><p>Where/when HTML is built. CSR: in the browser after JS (bad SEO, slow first paint). SSR: per request on the server (fresh, SEO-friendly, costs a render). SSG: once at build time (fastest, CDN-cacheable, can go stale; ISR rebuilds periodically). Tradeoff is freshness vs speed/cost.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How does React prevent XSS, and where's the hole?</summary><div class="qa-body"><p>React escapes strings interpolated into JSX, so user content can't inject markup. The hole is <code>dangerouslySetInnerHTML</code> — if you use it, sanitize the HTML (e.g. DOMPurify) and add a Content-Security-Policy.</p></div></details>
+    </section>
+
+    <section id="closing" data-group="Rapid-fire Q&amp;A">
+      <div class="sec-head"><div><div class="sec-kicker">The morning of</div><h2>Final checklist</h2></div></div>
+      <div class="card">
+        <ul>
+          <li>☐ Can explain the App Router server/client split and why</li>
+          <li>☐ Can explain RTK Query queries/mutations + tag invalidation cold</li>
+          <li>☐ Can describe server state vs client state vs UI state</li>
+          <li>☐ Can explain the SSE→useReducer→seq-dedupe pattern</li>
+          <li>☐ Can explain render→reconcile→commit and why keys matter</li>
+          <li>☐ Can walk the event loop output-ordering question</li>
+          <li>☐ Can give the useEffect cleanup + deps + stale-closure story</li>
+          <li>☐ Can pick flexbox vs grid and explain specificity</li>
+          <li>☐ Can compare CSR/SSR/SSG/ISR/RSC tradeoffs</li>
+          <li>☐ Have a perf optimization toolkit + Core Web Vitals ready</li>
+        </ul>
+      </div>
+      <div class="callout key"><span class="ct">Last thing</span><p>Your frontend isn't a toy — RTK Query with tag invalidation, resumable SSE streaming, optimistic UI, Zod-validated everything, hardened error handling. When a question goes abstract, pull it back to a real decision you made. You did this for the backend round and cleared it. Same move. Good luck.</p></div>
+      <p class="footer-note">Add a <code>&lt;section id="…" data-group="…"&gt;</code> and it appears in the sidebar automatically. <a href="../prep/index.html">↗ Backend prep lives in <code>prep/</code></a></p>
+    </section>
+
+    <div class="no-results" id="noResults">No topics match your filter.</div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

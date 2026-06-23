@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SSE + sinceSeq · Deep Dive</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16' stroke='%2356d364' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3Ccircle cx='5' cy='19' r='1.5' fill='%2356d364'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+<button class="menu-toggle" aria-label="Menu" onclick="document.querySelector('.sidebar').classList.toggle('open')">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+
+<div class="app">
+  <aside class="sidebar">
+    <a href="index.html" class="back-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      Back to Argus Prep
+    </a>
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#dffbe4" stroke-width="2" stroke-linecap="round"><path d="M4 11a9 9 0 0 1 9 9M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1.4" fill="#dffbe4" stroke="none"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">SSE + sinceSeq</div>
+        <div class="brand-sub">Live streaming · grok it</div>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="search" id="search" placeholder="Filter topics…  (press /)" autocomplete="off" />
+    </div>
+
+    <nav id="nav"></nav>
+  </aside>
+
+  <main class="content">
+    <header class="hero">
+      <h1>Live streaming with <span class="grad">SSE + sinceSeq</span></h1>
+      <p>How Argus streams a minutes-long workflow (and token-by-token chat) to the browser so that a refresh or a dropped connection <b>never loses an event and never shows a duplicate</b>. We'll build the idea up, then read the real code line by line.</p>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar"><i id="progressFill"></i></div>
+        <div class="progress-label" id="progressLabel">0 of 0 sections reviewed</div>
+      </div>
+      <div class="hero-meta">
+        <span><b>Touches</b> · networking · idempotency · consistency · concurrency</span>
+        <span><b>Pattern</b> · durable log + offset + idempotent dedupe</span>
+      </div>
+    </header>
+
+    <div class="content-inner" id="sections">
+
+    <!-- ════════════ ORIENT ════════════ -->
+    <section id="why" data-group="Orient">
+      <div class="sec-head"><div><div class="sec-kicker">Start here</div><h2>The problem, stated precisely</h2></div></div>
+      <p class="lead">A workflow run takes minutes and emits a stream of progress events (node started, output, finished…). The UI must show them live. But networks are hostile: the user refreshes the tab, the wifi blinks, a phone sleeps. The hard requirement:</p>
+      <div class="callout key"><span class="ct">The invariant we must hold</span><p>After <b>any</b> refresh, reconnect, or dropped connection mid-run, the client ends up with <b>exactly the set of events that happened — no gaps, no duplicates</b> — and keeps receiving new ones live. The same must hold for chat replies streamed token-by-token.</p></div>
+      <p>That's deceptively hard. Naive live streaming loses whatever fired while you were disconnected. Naive "replay everything on reconnect" duplicates what you already saw. We need a mechanism that does <b>both</b> correctly, and Argus's answer is small and elegant: <b>a durable event log + a per-run sequence number + idempotent dedupe.</b></p>
+    </section>
+
+    <section id="mental-model" data-group="Orient">
+      <div class="sec-head"><div><div class="sec-kicker">The core idea</div><h2>The whole trick in one picture</h2></div></div>
+      <p>Forget code for a second. The entire design is three moving parts:</p>
+      <ol class="steps">
+        <li><b>A durable, append-only log.</b> Every event is written to Mongo (<code>workflow_runs.events</code>) the moment it happens. <b>Mongo is the source of truth</b> — if everything else fails, the full history is here.</li>
+        <li><b>A monotonic sequence number (<code>seq</code>) on every event.</b> 1, 2, 3, … per run. This is the event's permanent address.</li>
+        <li><b>A live bus + a resume cursor.</b> Connected clients get events pushed live. On (re)connect, the client says <i>"I last saw <code>seq = N</code>"</i> via <code>?since_seq=N</code>, and the server replays everything after N, then tails live.</li>
+      </ol>
+<pre class="ascii">  events happen →  seq:  1    2    3    4    5    6 ...
+                        ───────────────●───────────────▶ time
+  client saw up to seq=3 ─────────────┘
+  reconnects with ?since_seq=3
+                        →  server replays 4,5,6  then streams 7,8,...
+                           (anything ≤ 3 is dropped — already seen)</pre>
+      <div class="callout info"><span class="ct">You already know this pattern</span><p>This is exactly a <b>Kafka consumer offset</b> and, one layer down, how <b>TCP sequence numbers</b> recover a byte stream after loss. A durable ordered log + a per-consumer cursor is <i>the</i> canonical way to get exactly-once <i>delivery semantics</i> out of an at-least-once channel. Naming that analogy in an interview is a senior signal.</p></div>
+    </section>
+
+    <!-- ════════════ THE CONCEPTS ════════════ -->
+    <section id="sse-101" data-group="The Concepts">
+      <div class="sec-head"><div><div class="sec-kicker">Concept</div><h2>What SSE actually is (on the wire)</h2></div></div>
+      <p class="lead">Server-Sent Events is not a fancy protocol — it's <b>one long-lived HTTP response</b> with a special content type that stays open and dribbles out text frames. That simplicity is the whole point.</p>
+      <p>The server responds with <code>Content-Type: text/event-stream</code> and never closes the body. Each event is a few lines followed by a blank line:</p>
+<pre>id: 4
+event: node_finished
+data: {"runId":"run_789","node":"researcher","seq":4,...}
+
+id: 5
+event: node_started
+data: {"runId":"run_789","node":"analyst","seq":5,...}
+</pre>
+      <p>Three fields matter:</p>
+      <table class="tbl">
+        <tr><th>Field</th><th>Meaning</th></tr>
+        <tr><td><code>id:</code></td><td>The event id. The browser remembers the last one and re-sends it as the <code>Last-Event-ID</code> header on auto-reconnect. <b>Argus puts the <code>seq</code> here.</b></td></tr>
+        <tr><td><code>event:</code></td><td>A named event type. The client listens per-name (<code>node_started</code>, <code>delta</code>, …).</td></tr>
+        <tr><td><code>data:</code></td><td>The payload — Argus sends camelCase JSON.</td></tr>
+      </table>
+      <div class="callout why"><span class="ct">Why SSE here and not WebSocket or polling</span><p>Our data flow is strictly <b>one-way, server→client</b>. SSE is plain HTTP (works through every proxy, no upgrade handshake), has <b>built-in auto-reconnect</b>, and needs no framing protocol. WebSocket is bidirectional — it would hand us a client→server channel we never use, plus connection-lifecycle and proxy complexity. Polling is chatty and adds latency to a token stream. SSE fits the shape exactly.</p></div>
+      <div class="callout gotcha"><span class="ct">Nuance worth saying out loud</span><p>SSE <i>gives</i> you <code>Last-Event-ID</code> for free, but Argus deliberately drives reconnection itself and passes the cursor as an explicit <code>?since_seq=</code> query param instead. Why? <b>Control.</b> Managing reconnect in our own code lets us add exponential backoff, offline awareness, and one unified resume mechanism shared with the chat stream — rather than depending on each browser's <code>EventSource</code> retry behaviour.</p></div>
+    </section>
+
+    <section id="guarantees" data-group="The Concepts">
+      <div class="sec-head"><div><div class="sec-kicker">Concept</div><h2>The three guarantees, and how seq delivers them</h2></div></div>
+      <p>Everything reduces to one integer per event. Watch how a single monotonic <code>seq</code> buys all three properties:</p>
+      <table class="tbl">
+        <tr><th>Guarantee</th><th>Mechanism</th></tr>
+        <tr><td><b>No loss</b></td><td>Every event is durably appended to Mongo <i>before</i> we care about live delivery. On reconnect, backfill replays everything with <code>seq &gt; since_seq</code> from that durable log. Even events dropped by an overloaded live queue are recovered here.</td></tr>
+        <tr><td><b>No duplicates</b></td><td>The client tracks the highest <code>seq</code> it has seen. The server drops any event <code>≤ since_seq</code>, and within a connection keeps a <code>sent</code> set to skip anything already delivered.</td></tr>
+        <tr><td><b>Resumability</b></td><td>The cursor <i>is</i> the client's last <code>seq</code>. Reconnect = "give me everything after N." No server-side per-client session to maintain.</td></tr>
+      </table>
+      <div class="callout key"><span class="ct">The mental compression</span><p><b>seq is the event's permanent address; since_seq is the client's bookmark.</b> Loss-free + dup-free streaming is just "replay from the bookmark, then follow along, ignoring anything at or before it."</p></div>
+    </section>
+
+    <section id="delivery" data-group="The Concepts">
+      <div class="sec-head"><div><div class="sec-kicker">Concept</div><h2>At-least-once + idempotent dedupe</h2></div></div>
+      <p class="lead">A foundational distributed-systems idea that this design embodies — be ready to say it.</p>
+      <p>Delivery guarantees come in three flavours:</p>
+      <ul>
+        <li><b>At-most-once</b> — never duplicates, but may lose. (Fire and forget.)</li>
+        <li><b>At-least-once</b> — never loses, but may duplicate. (Retry until acked.)</li>
+        <li><b>Exactly-once</b> — the dream; genuinely hard, usually <i>emulated</i>.</li>
+      </ul>
+      <div class="callout why"><span class="ct">How Argus "fakes" exactly-once</span><p>The transport is deliberately <b>at-least-once</b>: on the race window (next section) it would rather send a duplicate than risk a gap. Then it makes duplicates <b>harmless</b> by deduping on <code>seq</code> — an <b>idempotent</b> consumer. <b>At-least-once delivery + an idempotent consumer = effectively exactly-once processing.</b> That's the same recipe behind idempotency keys in payment APIs and Kafka's exactly-once semantics. Choosing "duplicate-but-safe" over "lossy-but-clean" is the heart of the design.</p></div>
+    </section>
+
+    <!-- ════════════ BACKEND ════════════ -->
+    <section id="event-shape" data-group="In the project · backend">
+      <div class="sec-head"><div><div class="sec-kicker">Backend code</div><h2>① The event, and its two sinks</h2></div></div>
+      <p>An event is a plain dict. Notice <code>seq</code> is a first-class field, and the same shape is both the <b>durable record</b> and the <b>SSE payload</b>.</p>
+<pre><span class="tok-c"># backend/app/workflow/events.py</span>
+<span class="tok-k">class</span> <span class="tok-f">WorkflowEvent</span>(TypedDict):
+    <span class="tok-s">"""One entry in a run's timeline (also the SSE payload shape)."""</span>
+    run_id: str
+    session_id: str
+    node: str
+    kind: str          <span class="tok-c"># run_started, node_finished, …</span>
+    payload: dict[str, Any]
+    ts: datetime
+    seq: int           <span class="tok-c"># ← the permanent address</span></pre>
+      <p>Every event flows to <b>two sinks</b> in <code>emit()</code> — first Mongo (durable), then the live bus (best-effort):</p>
+<pre><span class="tok-k">async def</span> <span class="tok-f">emit</span>(kind, *, node=RUN_NODE, payload=None, node_status=None):
+    ctx = current_run_context()
+    event: WorkflowEvent = {
+        <span class="tok-s">"run_id"</span>: ctx.run_id,
+        <span class="tok-s">"session_id"</span>: ctx.session_id,
+        <span class="tok-s">"node"</span>: node, <span class="tok-s">"kind"</span>: str(kind), <span class="tok-s">"payload"</span>: payload <span class="tok-k">or</span> {},
+        <span class="tok-s">"ts"</span>: _now(),
+        <span class="tok-s">"seq"</span>: ctx.next_seq(),          <span class="tok-c"># ← assign the next seq</span>
+    }
+    <span class="tok-k">await</span> workflow_repo.append_event(ctx.db, ctx.run_id, event, node_status=node_status)
+    <span class="tok-k">if</span> ctx.bus <span class="tok-k">is not</span> <span class="tok-n">None</span>:
+        ctx.bus.publish(ctx.session_id, event)   <span class="tok-c"># best-effort live fan-out</span>
+    <span class="tok-k">return</span> event</pre>
+      <div class="callout key"><span class="ct">Order matters: Mongo first, bus second</span><p>The durable write happens <b>before</b> the live publish. So an event that exists for any live subscriber is <i>guaranteed</i> to already be in the source of truth. A failed or skipped publish never corrupts the record — a reconnect always recovers it via backfill. This ordering is the foundation of "no loss."</p></div>
+
+      <h4>Where seq comes from: the RunContext</h4>
+      <p>The counter lives in a per-run context object carried via a <code>contextvars.ContextVar</code> — deliberately <b>not</b> in <code>GraphState</code>, because the graph state is checkpointed to Mongo and must stay serializable (no live handles/counters).</p>
+<pre><span class="tok-k">@dataclass</span>
+<span class="tok-k">class</span> <span class="tok-f">RunContext</span>:
+    db: AsyncIOMotorDatabase
+    run_id: str
+    session_id: str
+    bus: EventBus | None = <span class="tok-n">None</span>
+    _seq: int = field(default=<span class="tok-n">0</span>)
+
+    <span class="tok-k">def</span> <span class="tok-f">next_seq</span>(self) -> int:
+        self._seq += <span class="tok-n">1</span>            <span class="tok-c"># monotonic, per-run</span>
+        <span class="tok-k">return</span> self._seq</pre>
+      <p>And the durable append is a single atomic Mongo update — a <code>$push</code> onto the events array, optionally updating the node's status in the same write:</p>
+<pre><span class="tok-c"># backend/app/repositories/workflow_repo.py</span>
+<span class="tok-k">async def</span> <span class="tok-f">append_event</span>(db, run_id, event, *, node_status=None):
+    update = {<span class="tok-s">"$push"</span>: {<span class="tok-s">"events"</span>: dict(event)}}
+    <span class="tok-k">if</span> node_status <span class="tok-k">is not</span> <span class="tok-n">None</span> <span class="tok-k">and</span> event[<span class="tok-s">"node"</span>]:
+        update[<span class="tok-s">"$set"</span>] = {<span class="tok-s">f"node_status.{event['node']}"</span>: node_status.value}
+    <span class="tok-k">await</span> db[WORKFLOW_RUNS].update_one({<span class="tok-s">"_id"</span>: _to_object_id(run_id)}, update)</pre>
+    </section>
+
+    <section id="the-bus" data-group="In the project · backend">
+      <div class="sec-head"><div><div class="sec-kicker">Backend code</div><h2>② The in-process event bus</h2></div></div>
+      <p>The live side is a tiny pub/sub: each connected SSE handler <b>subscribes</b> a queue for its <code>session_id</code>; <code>emit()</code> <b>publishes</b> to every queue for that session. If nobody's listening, publish is a no-op — the event still lives in Mongo.</p>
+<pre><span class="tok-k">class</span> <span class="tok-f">EventBus</span>:
+    <span class="tok-k">def</span> <span class="tok-f">__init__</span>(self, *, max_queue=<span class="tok-n">512</span>):
+        self._subscribers: dict[str, set[asyncio.Queue]] = {}
+        self._max_queue = max_queue
+        self.dropped_events = <span class="tok-n">0</span>
+
+    <span class="tok-k">def</span> <span class="tok-f">subscribe</span>(self, session_id):
+        queue = asyncio.Queue(maxsize=self._max_queue)
+        self._subscribers.setdefault(session_id, set()).add(queue)
+        <span class="tok-k">return</span> queue
+
+    <span class="tok-k">def</span> <span class="tok-f">publish</span>(self, session_id, event):
+        <span class="tok-k">for</span> queue <span class="tok-k">in</span> self._subscribers.get(session_id, set()):
+            <span class="tok-k">if</span> queue.full():
+                <span class="tok-k">with</span> contextlib.suppress(asyncio.QueueEmpty):
+                    queue.get_nowait()          <span class="tok-c"># evict OLDEST to make room</span>
+                self.dropped_events += <span class="tok-n">1</span>
+            queue.put_nowait(event)</pre>
+      <div class="callout why"><span class="ct">Why bounded queues + drop-oldest</span><p>A slow or stalled browser must <b>never</b> block the workflow. So each subscriber queue is bounded (512). On overflow we evict the <i>oldest</i> event — live consumers always trend toward the newest. Dropped events aren't lost: they're still in Mongo, so a reconnect with <code>since_seq</code> recovers them. This is <b>backpressure handling</b>: protect the producer, degrade the slow consumer gracefully, lean on the durable log for correctness.</p></div>
+    </section>
+
+    <section id="the-endpoint" data-group="In the project · backend">
+      <div class="sec-head"><div><div class="sec-kicker">Backend code · the crown jewel</div><h2>③ The stream endpoint: subscribe → backfill → tail</h2></div></div>
+      <p class="lead">This is the function to understand cold. Read it slowly — every line defends the invariant. The ordering of the first two steps is the whole game.</p>
+<pre><span class="tok-c"># backend/app/api/runs.py — GET /sessions/{id}/runs/{runId}/events?since_seq=N</span>
+<span class="tok-k">async def</span> <span class="tok-f">generator</span>():
+    queue = event_bus.subscribe(session_id)   <span class="tok-c"># ① SUBSCRIBE FIRST (before backfill)</span>
+    sent: set[int] = set()
+    <span class="tok-k">try</span>:
+        <span class="tok-c"># ② BACKFILL: replay durable events the client hasn't seen</span>
+        <span class="tok-k">for</span> event <span class="tok-k">in</span> run.events:
+            <span class="tok-k">if</span> event.seq <= since_seq:
+                <span class="tok-k">continue</span>                       <span class="tok-c"># already seen → skip</span>
+            sent.add(event.seq)
+            <span class="tok-k">yield</span> _sse_format(frame)
+
+        <span class="tok-c"># if the run already finished, the terminal event is in the backfill —</span>
+        <span class="tok-c"># close now instead of waiting on a queue that'll never fill</span>
+        <span class="tok-k">if</span> run.status <span class="tok-k">in</span> _TERMINAL_STATUSES:
+            <span class="tok-k">return</span>
+
+        <span class="tok-c"># ③ TAIL: stream live events until the run terminates</span>
+        <span class="tok-k">while</span> <span class="tok-n">True</span>:
+            <span class="tok-k">if</span> <span class="tok-k">await</span> request.is_disconnected():
+                <span class="tok-k">return</span>                          <span class="tok-c"># client gone → don't leak a subscriber</span>
+            <span class="tok-k">try</span>:
+                live = <span class="tok-k">await</span> asyncio.wait_for(queue.get(), timeout=<span class="tok-n">15.0</span>)
+            <span class="tok-k">except</span> TimeoutError:
+                <span class="tok-k">yield</span> <span class="tok-s">": keep-alive\n\n"</span>          <span class="tok-c"># heartbeat (SSE comment)</span>
+                <span class="tok-k">continue</span>
+            <span class="tok-k">if</span> (live[<span class="tok-s">"run_id"</span>] != run_id
+                    <span class="tok-k">or</span> live[<span class="tok-s">"seq"</span>] <= since_seq      <span class="tok-c"># DEDUPE: below the cursor</span>
+                    <span class="tok-k">or</span> live[<span class="tok-s">"seq"</span>] <span class="tok-k">in</span> sent):       <span class="tok-c"># DEDUPE: already sent (the race!)</span>
+                <span class="tok-k">continue</span>
+            sent.add(live[<span class="tok-s">"seq"</span>])
+            <span class="tok-k">yield</span> _sse_format(live)
+            <span class="tok-k">if</span> live[<span class="tok-s">"kind"</span>] <span class="tok-k">in</span> _TERMINAL_KINDS:
+                <span class="tok-k">return</span>                          <span class="tok-c"># run_completed / run_failed → close</span>
+    <span class="tok-k">finally</span>:
+        event_bus.unsubscribe(session_id, queue)   <span class="tok-c"># always clean up</span></pre>
+      <p>Walk the four jobs it does:</p>
+      <ol class="steps">
+        <li><b>Subscribe first.</b> Register the live queue <i>before</i> reading the stored history. (Why this exact order is the next section.)</li>
+        <li><b>Backfill.</b> Replay durable events with <code>seq &gt; since_seq</code>, recording each in <code>sent</code>.</li>
+        <li><b>Short-circuit finished runs.</b> If the run already ended, the terminal event was in the backfill — return immediately rather than block on a queue that will never receive anything.</li>
+        <li><b>Tail.</b> Pull live events; skip wrong-run, below-cursor, and already-<code>sent</code> ones; emit a heartbeat every 15s of silence; close on the terminal event or client disconnect; and <b>always unsubscribe in <code>finally</code></b>.</li>
+      </ol>
+      <p>The SSE frame format — note <code>seq</code> becomes the SSE <code>id:</code>:</p>
+<pre><span class="tok-k">def</span> <span class="tok-f">_sse_format</span>(event):
+    data = WorkflowEventOut.model_validate(event).model_dump(by_alias=<span class="tok-n">True</span>, mode=<span class="tok-s">"json"</span>)
+    <span class="tok-k">return</span> <span class="tok-s">f"id: {event['seq']}\nevent: {event['kind']}\ndata: {json.dumps(data)}\n\n"</span></pre>
+    </section>
+
+    <section id="the-race" data-group="In the project · backend">
+      <div class="sec-head"><div><div class="sec-kicker">The subtlety</div><h2>④ Why subscribe-before-backfill (the race)</h2></div></div>
+      <p class="lead">This is the single most interview-worthy line in the system. It's a genuine concurrency race, and the fix is one line of ordering.</p>
+      <p>Between reading the stored history and starting to listen live, time passes. An event can fire <i>in that gap</i>. Consider the wrong order:</p>
+      <div class="flow-split">
+        <div class="flow-branch no" style="max-width:340px">
+          <span class="blabel">WRONG: backfill, then subscribe</span>
+          <div class="flow-box">1. read stored events (snapshot up to seq 5)</div>
+          <div class="flow-arr">↓</div>
+          <div class="flow-box decision"><b>⚡ seq 6 fires here</b><span class="sub">not in your snapshot, no subscriber yet</span></div>
+          <div class="flow-arr">↓</div>
+          <div class="flow-box">2. subscribe — too late</div>
+          <div class="flow-arr">↓</div>
+          <div class="flow-box" style="border-color:var(--rose)"><b>seq 6 is LOST</b></div>
+        </div>
+        <div class="flow-branch yes" style="max-width:340px">
+          <span class="blabel">RIGHT: subscribe, then backfill</span>
+          <div class="flow-box">1. subscribe (now capturing live)</div>
+          <div class="flow-arr">↓</div>
+          <div class="flow-box decision"><b>⚡ seq 6 fires here</b><span class="sub">queued live AND about to be in backfill</span></div>
+          <div class="flow-arr">↓</div>
+          <div class="flow-box">2. backfill replays … 6</div>
+          <div class="flow-arr">↓</div>
+          <div class="flow-box cache"><b>seq 6 arrives twice</b><span class="sub">dedupe by <code>sent</code> drops the copy</span></div>
+        </div>
+      </div>
+      <div class="callout key"><span class="ct">The principle</span><p>By subscribing first, the worst case becomes a <b>duplicate</b> (seq 6 in both the backfill and the live queue) — and the <code>sent</code> set makes duplicates free. The wrong order makes the worst case a <b>loss</b>, which is unrecoverable on that connection. <b>You deliberately trade a possible-but-harmless duplicate to make a loss impossible.</b> That's the at-least-once + idempotent-dedupe principle applied to a single race window.</p></div>
+    </section>
+
+    <section id="chat-stream" data-group="In the project · backend">
+      <div class="sec-head"><div><div class="sec-kicker">Backend code</div><h2>⑤ The chat stream mirrors it exactly</h2></div></div>
+      <p>Token-by-token chat replies use the same shape, with an in-memory <code>ChatStreamManager</code> instead of Mongo as the buffer (a reply is short-lived, so its deltas are buffered in process and replayed on reconnect). Each delta gets its own <code>seq</code>:</p>
+<pre><span class="tok-c"># backend/app/services/chat_service.py</span>
+<span class="tok-k">class</span> <span class="tok-f">ChatStreamManager</span>:
+    <span class="tok-k">def</span> <span class="tok-f">publish_delta</span>(self, message_id, text):
+        state = self._streams.get(message_id)
+        state._seq += <span class="tok-n">1</span>
+        seq = state._seq
+        state.deltas.append((seq, text))     <span class="tok-c"># BUFFER for replay on reconnect</span>
+        frame = {<span class="tok-s">"type"</span>: <span class="tok-s">"delta"</span>, <span class="tok-s">"seq"</span>: seq, <span class="tok-s">"text"</span>: text}
+        <span class="tok-k">for</span> queue <span class="tok-k">in</span> list(state.subscribers):
+            queue.put_nowait(frame)           <span class="tok-c"># live fan-out</span></pre>
+      <p>The SSE handler for chat does the same <b>buffered-backfill (<code>seq &gt; since_seq</code>) then tail</b> dance, so a refresh mid-generation replays the tokens you already saw being typed and continues from there. The stream ends on a <code>done</code> frame (carrying final citations + status) rather than waiting for more.</p>
+      <div class="callout info"><span class="ct">Same idea, different durability</span><p>Workflow events are durable in Mongo (runs are long, audit matters). Chat deltas live in an in-process buffer (a reply finishes in seconds). But the <b>protocol is identical</b>: monotonic <code>seq</code>, replay-past-cursor, dedupe, tail. One mental model covers both feeds.</p></div>
+    </section>
+
+    <!-- ════════════ FRONTEND ════════════ -->
+    <section id="frontend-client" data-group="In the project · frontend">
+      <div class="sec-head"><div><div class="sec-kicker">Frontend code</div><h2>⑥ The browser side: track seq, reconnect with it</h2></div></div>
+      <p>The client's job is tiny: remember the highest <code>seq</code> seen, and reconnect carrying it. Argus wraps <code>EventSource</code> and drives reconnection manually for control.</p>
+<pre><span class="tok-c">// frontend/src/lib/sse.ts</span>
+<span class="tok-k">let</span> lastSeq = opts.sinceSeq ?? <span class="tok-n">0</span>;
+
+<span class="tok-k">const</span> url = () => {
+  <span class="tok-k">const</span> u = <span class="tok-k">new</span> URL(baseUrl);
+  u.searchParams.set(<span class="tok-s">"since_seq"</span>, String(lastSeq));   <span class="tok-c">// carry the cursor</span>
+  <span class="tok-k">return</span> u.toString();
+};
+
+<span class="tok-k">const</span> handle = (ev) => {
+  <span class="tok-k">const</span> event = JSON.parse(ev.data);
+  <span class="tok-k">if</span> (<span class="tok-k">typeof</span> event.seq === <span class="tok-s">"number"</span>)
+    lastSeq = Math.max(lastSeq, event.seq);   <span class="tok-c">// advance the bookmark</span>
+  opts.onEvent(event);
+};
+
+<span class="tok-k">const</span> connect = () => {
+  <span class="tok-k">if</span> (navigator.onLine === <span class="tok-n">false</span>) {            <span class="tok-c">// offline-aware: don't hammer</span>
+    timer = setTimeout(connect, <span class="tok-n">2000</span>); <span class="tok-k">return</span>;
+  }
+  source = <span class="tok-k">new</span> EventSource(url());            <span class="tok-c">// reconnect with latest since_seq</span>
+  source.onerror = () => {
+    source?.close();
+    <span class="tok-k">const</span> delay = Math.min(<span class="tok-n">1000</span> * <span class="tok-n">2</span> ** retry, <span class="tok-n">10_000</span>);  <span class="tok-c">// 1s→2s→4s… cap 10s</span>
+    retry += <span class="tok-n">1</span>;
+    timer = setTimeout(connect, delay);       <span class="tok-c">// exponential backoff</span>
+  };
+};</pre>
+      <div class="callout why"><span class="ct">What the frontend does NOT have to do</span><p>No reconciliation logic, no "did I miss anything?" bookkeeping, no client-side dedup beyond letting the server filter. The cursor (<code>lastSeq</code>) plus the server's backfill+dedupe make the client almost stateless about correctness. <b>Push the hard guarantee to one place (the server + the durable log); keep the client dumb.</b> That's good system design.</p></div>
+      <p>On reconnect the loop just calls <code>connect()</code> again with the updated <code>lastSeq</code> — the server replays the gap and resumes the live tail. The user sees a brief pause, never a gap or a double-rendered node.</p>
+    </section>
+
+    <!-- ════════════ DEEPER ════════════ -->
+    <section id="proxies" data-group="Going deeper">
+      <div class="sec-head"><div><div class="sec-kicker">Operational detail</div><h2>Heartbeats & surviving proxies</h2></div></div>
+      <p>Two real-world gotchas that the code quietly handles:</p>
+      <h4>Heartbeats</h4>
+      <p>If no event fires for a while, idle connections get reaped by proxies/load balancers. So after 15s of silence the server emits an SSE <b>comment</b> line (<code>: keep-alive\n\n</code>) — ignored by the client, but it keeps the TCP connection and any intermediary awake.</p>
+      <h4>Proxy-defeating headers</h4>
+<pre>_SSE_HEADERS = {
+    <span class="tok-s">"Cache-Control"</span>: <span class="tok-s">"no-cache"</span>,        <span class="tok-c"># don't cache a stream</span>
+    <span class="tok-s">"Connection"</span>: <span class="tok-s">"keep-alive"</span>,
+    <span class="tok-s">"X-Accel-Buffering"</span>: <span class="tok-s">"no"</span>,         <span class="tok-c"># tell nginx: do NOT buffer — flush each frame</span>
+}</pre>
+      <div class="callout gotcha"><span class="ct">The classic SSE bug</span><p>Without <code>X-Accel-Buffering: no</code>, nginx (Argus's reverse proxy) buffers the response and the user sees <b>nothing for minutes, then everything at once</b> when the buffer flushes — the stream "works" but isn't live. Knowing this header exists is a strong practical signal.</p></div>
+    </section>
+
+    <section id="limitations" data-group="Going deeper">
+      <div class="sec-head"><div><div class="sec-kicker">Own the tradeoff</div><h2>The limitation: in-process bus</h2></div></div>
+      <p>State this <i>before</i> they ask — it's the honest edge of the design.</p>
+      <div class="callout gotcha"><span class="ct">What breaks at scale</span><p>The <code>EventBus</code> and chat buffers live <b>in one process's memory</b>. With multiple API replicas behind a load balancer, a client's SSE connection might land on a replica that <i>isn't</i> the one running its workflow — so it sees no live events. The fix is <b>Redis pub/sub</b> (or similar): publish events to a shared channel any replica can subscribe to.</p></div>
+      <div class="callout key"><span class="ct">But the design degrades gracefully</span><p>Because <b>Mongo is the durable source of truth</b> and the resume protocol is <code>since_seq</code>, even today a process restart or failover only costs the client a reconnect — the backfill heals the gap. The in-process bus is a <i>performance/liveness</i> limitation, not a <i>correctness</i> one. That separation — "durable correctness vs. in-memory liveness" — is exactly the nuance senior interviewers listen for.</p></div>
+      <p>Other honest edges: exactly-once is only at the <i>delivery</i> layer — a workflow node that crashed mid-LLM-call may re-issue that external call on resume (at-least-once <i>side effects</i>). The <code>seq</code> mechanism guarantees the <i>event stream</i> is clean, not that every external action ran exactly once.</p>
+    </section>
+
+    <!-- ════════════ RECAP ════════════ -->
+    <section id="recap" data-group="Recap">
+      <div class="sec-head"><div><div class="sec-kicker">Recap</div><h2>Narrate it in 90 seconds</h2></div></div>
+      <ol class="steps">
+        <li>"It's a one-way server→client feed, so <b>SSE</b> over WebSocket — plain HTTP, native reconnect, proxy-friendly."</li>
+        <li>"Every event gets a <b>durable write to Mongo and a monotonic <code>seq</code></b>; Mongo is the source of truth, the live bus is best-effort."</li>
+        <li>"Clients reconnect with <code>?since_seq=N</code>; the server <b>subscribes first, backfills <code>seq &gt; N</code>, then tails live</b>, deduping by seq."</li>
+        <li>"<b>Subscribe-before-backfill</b> turns the race into a harmless duplicate instead of a loss — at-least-once delivery plus idempotent dedupe."</li>
+        <li>"<b>Bounded drop-oldest queues</b> stop a slow client blocking the workflow; dropped events are recovered from Mongo on reconnect."</li>
+        <li>"<b>Heartbeats + <code>X-Accel-Buffering: no</code></b> keep it live through nginx."</li>
+        <li>"Chat token streaming uses the identical protocol with an in-process buffer."</li>
+        <li>"Limitation: the bus is in-process — multi-replica needs Redis pub/sub — but Mongo durability means it's a liveness limit, not a correctness one."</li>
+      </ol>
+      <div class="callout key"><span class="ct">The phrases that score</span><p>"durable append-only log + monotonic seq + idempotent dedupe" · "Mongo is the source of truth, the bus is best-effort" · "subscribe before backfill to turn a loss into a harmless duplicate" · "at-least-once delivery, exactly-once processing" · "bounded queues, drop-oldest, recover from the log" · "Kafka consumer offset / TCP sequence numbers" · "in-process bus → Redis pub/sub, but it's a liveness not correctness limit."</p></div>
+    </section>
+
+    <section id="qa" data-group="Recap">
+      <div class="sec-head"><div><div class="sec-kicker">Flashcards</div><h2>Rapid-fire: SSE + sinceSeq</h2></div></div>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why SSE and not WebSocket?</summary><div class="qa-body"><p>The flow is one-way server→client. SSE is plain HTTP with built-in auto-reconnect and no framing, and works through proxies untouched. WebSocket adds a client→server channel we don't use, plus connection lifecycle and proxy complexity. Polling would be chatty and add latency to a token stream.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How do you guarantee no lost and no duplicate events on reconnect?</summary><div class="qa-body"><p>Each event has a monotonic per-run <code>seq</code> and is durably stored in Mongo before live fan-out. On reconnect the client sends <code>?since_seq=N</code>; the server subscribes to the live bus first, backfills stored events with <code>seq &gt; N</code>, then tails live, dropping anything <code>≤ N</code> or already in its <code>sent</code> set. No gap (backfill from the durable log), no dup (dedupe by seq).</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why subscribe to the bus before reading backfill?</summary><div class="qa-body"><p>To close a race: an event can fire between snapshotting the stored history and starting to listen. Subscribe-first means that event is captured live (and may also be in the backfill) → worst case a duplicate, which dedupe-by-seq drops harmlessly. Backfill-first would lose it. You trade a possible duplicate to make a loss impossible.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What happens if a client is too slow to consume?</summary><div class="qa-body"><p>Each subscriber queue is bounded (512). On overflow the bus evicts the oldest event and bumps a counter — it never blocks the workflow producer. The dropped events remain in Mongo, so when the client catches up or reconnects with <code>since_seq</code>, backfill recovers them. Backpressure handled; correctness preserved by the durable log.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why isn't seq stored in the graph state?</summary><div class="qa-body"><p>The LangGraph state is checkpointed to Mongo after every super-step and must stay serializable — no live handles or counters. So the <code>seq</code> counter, DB handle, and bus live in a <code>RunContext</code> carried via a <code>contextvars.ContextVar</code>, bound just before the graph is invoked and visible to every node.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What's the scaling limitation and is it a correctness problem?</summary><div class="qa-body"><p>The event bus and chat buffers are in-process, so they don't span multiple API replicas — a fix is Redis pub/sub. But it's a <b>liveness</b> limitation, not correctness: Mongo is the durable source of truth, so after a failover or restart a client just reconnects and backfill heals the gap.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How does the chat token stream differ from the workflow stream?</summary><div class="qa-body"><p>Same protocol — monotonic seq, backfill-past-cursor, tail, dedupe — but the buffer is in-process (<code>ChatStreamManager</code>) rather than Mongo, because a reply is short-lived. Deltas are buffered for replay on mid-generation refresh; the stream ends on a <code>done</code> frame carrying final citations and status.</p></div></details>
+
+      <p class="footer-note">This is the deepest single mechanism in Argus. If you can draw the subscribe→backfill→tail timeline and explain the race, you've demonstrated networking, concurrency, idempotency, and consistency in one answer. <a href="index.html">← Back to Argus Prep</a></p>
+    </section>
+
+    <div class="no-results" id="noResults">No topics match your filter.</div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

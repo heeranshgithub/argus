@@ -1,0 +1,791 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Argus · Interview Prep</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%2356d364' d='M2 12l9-3 11-5-4 9 4 9-11-5-9-3 5-3z'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+<button class="menu-toggle" aria-label="Menu" onclick="document.querySelector('.sidebar').classList.toggle('open')">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+
+<div class="app">
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">
+        <!-- origami bird -->
+        <svg viewBox="0 0 24 24" fill="none"><path d="M2 12l9-3 11-5-4 9 4 9-11-5-9-3 5-3z" fill="#0a0e13" stroke="#dffbe4" stroke-width="1.1" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">Argus Prep</div>
+        <div class="brand-sub">System Design · CS</div>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="search" id="search" placeholder="Filter topics…  (press /)" autocomplete="off" />
+    </div>
+
+    <nav id="nav"></nav>
+  </aside>
+
+  <!-- ============ CONTENT ============ -->
+  <main class="content">
+    <header class="hero">
+      <h1>The Argus <span class="grad">interview playbook</span></h1>
+      <p>Everything you built, explained the way an interviewer will probe it — then widened into the system-design and CS fundamentals behind each choice. Lead with the project, fall back to first principles.</p>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar"><i id="progressFill"></i></div>
+        <div class="progress-label" id="progressLabel">0 of 0 sections reviewed</div>
+      </div>
+      <div class="hero-meta">
+        <span><b>Stack</b> · Next.js · FastAPI · LangGraph · MongoDB</span>
+        <span><b>Tip</b> · mark sections reviewed as you go</span>
+        <span><b>Shortcut</b> · <span class="kbd">/</span> to search</span>
+      </div>
+    </header>
+
+    <div class="content-inner" id="sections">
+
+    <!-- ════════════════════════ GROUP: ORIENT ════════════════════════ -->
+
+    <section id="how-to-use" data-group="Orient">
+      <div class="sec-head"><div><div class="sec-kicker">Start here</div><h2>How to use this, and how to walk in</h2></div></div>
+      <p class="lead">You have a real, sophisticated system under your belt. The single biggest scoring move in any design interview is to <b>anchor abstract questions to something you actually built and reasoned about.</b> This site makes that reflex automatic.</p>
+
+      <h3>The framing that wins</h3>
+      <p>When they ask "how would you design X," they're really testing whether you can reason about <b>tradeoffs under constraints</b>. You already did this five times in Argus and wrote it down. So your default move is:</p>
+      <div class="callout key"><span class="ct">The move</span><p><i>"Let me ground this — in Argus I faced a version of this when I chose SSE over WebSockets. The constraint was X, the alternatives were Y and Z, I picked SSE because…, and the cost I accepted was…"</i> Then generalize to their question.</p></div>
+      <p>Every interviewer rewards: <b>(1)</b> stating the constraint before the solution, <b>(2)</b> naming the alternative you <i>didn't</i> pick and why, <b>(3)</b> owning the tradeoff/cost explicitly. Argus gives you a stocked shelf of all three.</p>
+
+      <h3>How the site is organized</h3>
+      <ul>
+        <li><b>The Project</b> — Argus end to end. Know this cold; it's your home base.</li>
+        <li><b>Design Decisions</b> — the five documented tradeoffs, rehearsed as answers.</li>
+        <li><b>Scaling Argus</b> — your debt list turned into a "how would you scale this" narrative. Pure system design, grounded.</li>
+        <li><b>System Design Fundamentals</b> — the general toolkit for questions beyond Argus.</li>
+        <li><b>CS Fundamentals</b> — networking, concurrency, data, the refreshers.</li>
+        <li><b>Rapid-fire Q&A</b> — flashcards for the morning of.</li>
+      </ul>
+      <div class="callout info"><span class="ct">Use the checkmarks</span><p>Hit <b>Mark reviewed</b> at the top of each section as you go — progress persists in your browser, so you can cram in passes and see what's left.</p></div>
+
+      <a href="url-shortener.html" class="page-card">
+        <div class="pc-k">Standalone deep dive</div>
+        <div class="pc-t">⚡ Design a URL Shortener →</div>
+        <div class="pc-d">The most-asked open-ended system design question, walked through from first principles with flowcharts: estimation, base62 encoding, distributed ID generation, the read/write paths, caching, and sharding. Not Argus-specific — its own page.</div>
+        <span class="pc-go">Open the walkthrough →</span>
+      </a>
+    </section>
+
+    <section id="elevator" data-group="The Project">
+      <div class="sec-head"><div><div class="sec-kicker">The Project</div><h2>Argus in 60 seconds</h2></div></div>
+      <p class="lead">Memorize this. It's your opening answer to "tell me about a project you're proud of."</p>
+      <div class="callout key"><span class="ct">The pitch</span><p>Argus is an <b>AI research copilot</b> for sales. You give it a target company; it runs a <b>six-node LangGraph workflow</b> that plans research questions, searches and fetches the web, extracts business signals, synthesizes them, and runs a <b>quality gate that can loop back for more research</b>. The output is a structured nine-section briefing with cited sources. You then <b>chat with that briefing</b> as grounded context — every answer cites its sources. You watch the whole thing execute <b>live</b> via server-sent events, and any run can <b>resume from a crash</b> because state is checkpointed to Mongo after every step.</p></div>
+
+      <h3>Why this is a strong interview project</h3>
+      <table class="tbl">
+        <tr><th>It demonstrates</th><th>Through</th></tr>
+        <tr><td>Stateful orchestration</td><td>LangGraph state machine with a conditional research loop</td></tr>
+        <tr><td>Real-time systems</td><td>SSE streaming with resumable sequence numbers</td></tr>
+        <tr><td>Fault tolerance</td><td>Custom Mongo checkpointer + graceful shutdown + resume</td></tr>
+        <tr><td>Clean architecture</td><td>Strict api → service → repository → db layering</td></tr>
+        <tr><td>Honest engineering</td><td>A written, prioritized tech-debt and scale-out plan</td></tr>
+      </table>
+      <p>The deployed app: <a href="https://main.dnpq3ypn7esgf.amplifyapp.com">main.dnpq3ypn7esgf.amplifyapp.com</a>. The flow: <b>New session → Run → live Progress → Report → Chat.</b></p>
+    </section>
+
+    <!-- ════════════════════════ GROUP: THE PROJECT ════════════════════════ -->
+
+    <section id="architecture" data-group="The Project">
+      <div class="sec-head"><div><div class="sec-kicker">The Project</div><h2>Architecture, top to bottom</h2></div></div>
+      <p class="lead">Be able to draw this on a whiteboard from memory. Then layer the "why" onto each box.</p>
+<pre class="ascii">          camelCase JSON over HTTP  ┌──────────────┐
+  ┌───────────────┐  ───────────────▶│   Backend    │
+  │   Frontend    │                  │   FastAPI    │
+  │  Next.js 16   │ ◀── SSE streams ──│  (Uvicorn)   │
+  │  RTK Query    │  (runs + chat)    └──────┬───────┘
+  └───────────────┘            ┌────────────┼────────────┐
+                               ▼            ▼            ▼
+                        ┌───────────┐ ┌─────────┐ ┌────────────┐
+                        │ LangGraph │ │ MongoDB │ │ OpenRouter │
+                        │ workflow  │ │ (Motor) │ │  + Tavily  │
+                        │ (6 nodes) │ │         │ │ LLM/search │
+                        └───────────┘ └─────────┘ └────────────┘</pre>
+
+      <h3>The backend layering rule (say this verbatim)</h3>
+      <div class="callout key"><span class="ct">The rule</span><p><code>api → services → repositories → db</code>. <b>Routes never touch Mongo directly. Repositories never raise HTTP.</b> Domain errors raised in services get mapped to the wire error contract in one place (<code>app/api/errors.py</code>).</p></div>
+      <p>Why this matters in an interview: it shows you understand <b>separation of concerns</b> and <b>dependency direction</b>. Each layer has one job:</p>
+      <table class="tbl">
+        <tr><th>Layer</th><th>Job</th><th>Forbidden from</th></tr>
+        <tr><td><b>api/</b></td><td>HTTP shape: parse, validate, serialize, status codes</td><td>knowing about Mongo</td></tr>
+        <tr><td><b>services/</b></td><td>orchestration + business rules (e.g. "no active run already")</td><td>HTTP concerns</td></tr>
+        <tr><td><b>repositories/</b></td><td>async Mongo CRUD, <code>_id → id</code> conversion at the edge</td><td>raising HTTPException</td></tr>
+        <tr><td><b>db/</b></td><td>Motor client, collection names, index creation</td><td>business logic</td></tr>
+      </table>
+
+      <h3>The three request flows</h3>
+      <h4>1 · Create a session — synchronous</h4>
+      <pre>POST /api/sessions {companyName, website, objective}
+  → session_service.create_session → session_repo.create → Mongo
+  ← 201 SessionOut</pre>
+      <h4>2 · Run the workflow — async + streamed</h4>
+      <pre>POST /api/sessions/{id}/run
+  guard: session exists, no active run
+  create run (status=running); BackgroundTasks.add_task(runner.execute)
+  ← 202 { runId }            <span class="tok-c"># returns immediately, work continues</span>
+
+GET .../runs/{runId}/events?since_seq=N   <span class="tok-c"># SSE: backfill then tail</span></pre>
+      <p>The key idea: the POST <b>returns in milliseconds</b> with a <code>202 Accepted</code>; the minutes-long work runs in the background and the client watches it over a separate streaming connection. This is the <b>async request-reply</b> pattern — worth naming explicitly.</p>
+      <h4>3 · Chat — grounded + streamed</h4>
+      <pre>POST /api/sessions/{id}/chat {content}
+  require a report exists (else 409); load last 10 messages
+  persist user msg + a "streaming" assistant msg
+  asyncio.create_task(_generate)
+  ← 200 { messageId }
+
+_generate: BM25-select sources → build prompt (report + sources + history)
+           → llm.stream → publish each token delta → finalize + parse citations</pre>
+    </section>
+
+    <section id="workflow" data-group="The Project">
+      <div class="sec-head"><div><div class="sec-kicker">The Project</div><h2>The six-node LangGraph workflow</h2></div></div>
+      <p class="lead">This is your most differentiated piece. Most candidates have CRUD apps; you have a stateful, self-correcting agent graph.</p>
+<pre class="ascii">           ┌─────────┐   needs_more_research? (loop, capped)
+  START ──▶ │ planner │ ◀─────────── yes ──────────────┐
+           └────┬────┘   turn missing_areas into        │
+                ▼        fresh gap-closing questions     │
+         ┌────────────┐                                  │
+         │ researcher │  search + fetch + clean          │
+         └─────┬──────┘  → raw_sources                   │
+               ▼                                          │
+      ┌──────────────────┐                               │
+      │ signal_extractor │  funding/hiring/product/…     │
+      └────────┬─────────┘                               │
+               ▼                                          │
+          ┌──────────┐                                    │
+          │ analyst  │  synthesize overview/risks/…       │
+          └────┬─────┘                                    │
+               ▼                                          │
+       ┌───────────────┐                                 │
+       │ quality_check │ ───────── yes ──────────────────┘
+       └───────┬───────┘
+               │ no
+               ▼
+          ┌──────────┐
+          │ reporter │  emit nine-section report → END
+          └──────────┘</pre>
+
+      <h3>Four concepts to nail</h3>
+      <h4>Shared, typed state</h4>
+      <p>Every node reads and writes one <code>GraphState</code> (a <code>TypedDict</code>): inputs (<code>company_name</code>, <code>objective</code>), accumulating outputs (<code>plan</code>, <code>raw_sources</code>, <code>analysis</code>, <code>quality</code>, <code>report</code>), and control fields (<code>retry_counts</code>, <code>research_iteration</code>, <code>researched_question_ids</code>).</p>
+      <div class="callout key"><span class="ct">Channels & reducers</span><p>Some state channels have a <b>reducer</b> — a merge function. <code>raw_sources</code> uses one that <b>appends and de-dupes by URL</b> across research loops, instead of clobbering. Plain channels are <b>last-write-wins</b>. This is the detail that shows you actually understand LangGraph, not just used it.</p></div>
+
+      <h4>Conditional routing — and a subtle bug you fixed</h4>
+      <p><code>quality_check</code> returns <code>needs_more_research</code> + <code>missing_areas</code>. A conditional edge loops back — but back to the <b>planner, not the researcher.</b> Why does that distinction matter?</p>
+      <div class="callout why"><span class="ct">Why loop to the planner</span><p>Looping straight to the researcher would re-run it against the <b>already-researched plan</b> and gather nothing new — an infinite-ish loop burning tokens. Routing to the planner lets it convert the gaps into <b>fresh sub-questions</b>, so the next pass has something new to chase. (This is literally your commit <code>a094b5a</code>.) It's bounded by <code>workflow_max_research_iterations</code> and only taken when <code>missing_areas</code> is non-empty.</p></div>
+
+      <h4>Capabilities, not clients</h4>
+      <p>Nodes are closures over <code>WorkflowDeps</code> (<code>llm</code>, <code>search</code>, <code>fetcher</code>, <code>settings</code>) — and these are <b>protocols</b> (interfaces). So tests inject fakes and the whole graph runs offline under pytest. Crucially, <b>deps never enter the state</b> — state must stay JSON/msgpack-serializable for checkpointing, so no live DB handles or sockets allowed in it.</p>
+
+      <h4>Failure handling</h4>
+      <p>Per-node retry policy (<code>workflow_node_retry_limit</code>) for transient errors; an uncaught node error fails the run with a typed <code>WorkflowError</code>. You also sketched a second conditional edge for the "research dead-end" (zero sources found) that routes to a <i>degraded report</i> instead of crashing — good to mention as "what I'd add next."</p>
+
+      <a href="langgraph-workflow.html" class="page-card">
+        <div class="pc-k">Standalone deep dive · with real code</div>
+        <div class="pc-t">🕸 The LangGraph workflow, line by line →</div>
+        <div class="pc-d">The full agent graph on its own page: how the graph is assembled, the typed shared state and the de-dupe reducer that makes the loop accumulate, why the conditional edge loops to the planner, node anatomy + dependency injection, retries, and checkpoint/resume — all against the actual backend code. Everything to defend the most differentiated piece of Argus.</div>
+        <span class="pc-go">Open the walkthrough →</span>
+      </a>
+    </section>
+
+    <section id="state-evolution" data-group="The Project">
+      <div class="sec-head"><div><div class="sec-kicker">The Project · the killer demo</div><h2>Watch the state grow, node by node</h2></div></div>
+      <p class="lead">This is the single most concrete way to explain a LangGraph workflow. One <code>GraphState</code> dict enters the graph nearly empty and each node <b>appends its slice</b>. If you can narrate this Stripe example, you've shown you understand stateful orchestration cold.</p>
+
+      <div class="callout key"><span class="ct">The one mental model</span><p>A node does <b>not</b> return the whole state. It returns a small <b>partial dict</b> — just the keys it produced. LangGraph <b>merges</b> that partial into the running state: plain channels are <b>last-write-wins</b>, channels with a <b>reducer</b> (like <code>raw_sources</code>) <b>accumulate</b>. So the picture below is the <i>cumulative</i> state after each merge; the green bands are what that node just added.</p></div>
+
+      <h3>Stage 0 · what the runner seeds before any node runs</h3>
+      <p>Only the inputs and control scaffolding exist. Everything else is absent (the <code>TypedDict</code> is <code>total=False</code> — all keys optional, filled in as we go).</p>
+<pre>{
+  <span class="tok-c"># --- inputs (from the session) ---</span>
+  <span class="tok-s">"session_id"</span>: <span class="tok-s">"abc123"</span>,
+  <span class="tok-s">"run_id"</span>: <span class="tok-s">"run_789"</span>,
+  <span class="tok-s">"company_name"</span>: <span class="tok-s">"Stripe"</span>,
+  <span class="tok-s">"website"</span>: <span class="tok-s">"https://stripe.com"</span>,
+  <span class="tok-s">"objective"</span>: <span class="tok-s">"Find expansion opportunities for our payments API"</span>,
+
+  <span class="tok-c"># --- control scaffolding ---</span>
+  <span class="tok-s">"research_iteration"</span>: <span class="tok-n">0</span>,
+  <span class="tok-s">"retry_counts"</span>: {},
+  <span class="tok-s">"errors"</span>: [],
+  <span class="tok-s">"researched_question_ids"</span>: []
+  <span class="dim"># plan, raw_sources, extracted_signals, analysis, quality, report → not set yet</span>
+}</pre>
+
+      <!-- STAGE 1 -->
+      <div class="node-step"><span class="node-chip"><span class="num">1</span>planner<span class="adds">adds <code>plan</code></span></span></div>
+      <p>The planner turns the objective into focused sub-questions and assigns each an <code>id</code>.</p>
+      <div class="partial-label">▸ partial returned by the node <span class="mut">— this is all it returns</span></div>
+<pre>{ <span class="tok-s">"plan"</span>: [
+    {<span class="tok-s">"id"</span>: <span class="tok-s">"q1"</span>, <span class="tok-s">"question"</span>: <span class="tok-s">"What has Stripe launched recently?"</span>, <span class="tok-s">"rationale"</span>: <span class="tok-s">"..."</span>},
+    {<span class="tok-s">"id"</span>: <span class="tok-s">"q2"</span>, <span class="tok-s">"question"</span>: <span class="tok-s">"Where is Stripe hiring?"</span>,        <span class="tok-s">"rationale"</span>: <span class="tok-s">"..."</span>}
+]}</pre>
+      <div class="partial-label">▸ cumulative state after merge</div>
+<pre>{
+  <span class="dim"># inputs + control … (unchanged from Stage 0)</span>
+<span class="add">  <span class="tok-s">"plan"</span>: [
+    {<span class="tok-s">"id"</span>: <span class="tok-s">"q1"</span>, <span class="tok-s">"question"</span>: <span class="tok-s">"What has Stripe launched recently?"</span>, <span class="tok-s">"rationale"</span>: <span class="tok-s">"..."</span>},
+    {<span class="tok-s">"id"</span>: <span class="tok-s">"q2"</span>, <span class="tok-s">"question"</span>: <span class="tok-s">"Where is Stripe hiring?"</span>,        <span class="tok-s">"rationale"</span>: <span class="tok-s">"..."</span>}
+  ]</span>
+}</pre>
+
+      <div class="flow-arrow">↓</div>
+
+      <!-- STAGE 2 -->
+      <div class="node-step"><span class="node-chip"><span class="num">2</span>researcher<span class="adds">adds <code>raw_sources</code> <span style="color:var(--accent)">(reducer channel)</span></span></span></div>
+      <p>Searches + fetches + cleans the web for each sub-question. Its channel has the <b>de-dupe-by-URL reducer</b>, so on a second research loop new sources <i>append</i> rather than overwrite.</p>
+      <div class="partial-label">▸ cumulative state after merge</div>
+<pre>{
+  <span class="dim"># inputs + control + plan … (unchanged)</span>
+<span class="add">  <span class="tok-s">"raw_sources"</span>: [
+    {
+      <span class="tok-s">"url"</span>: <span class="tok-s">"https://techcrunch.com/2024/03/stripe-funding"</span>,
+      <span class="tok-s">"title"</span>: <span class="tok-s">"Stripe raises $694M..."</span>,
+      <span class="tok-s">"snippet"</span>: <span class="tok-s">"..."</span>,
+      <span class="tok-s">"content"</span>: <span class="tok-s">"...(cleaned text, capped at N chars)..."</span>,
+      <span class="tok-s">"fetched_at"</span>: <span class="tok-s">"2024-03-15T10:22:00Z"</span>
+    }
+    <span class="tok-c"># ... more sources</span>
+  ]</span>
+}</pre>
+      <div class="callout info"><span class="ct">Why the reducer matters right here</span><p>If <code>quality_check</code> later loops back, the researcher runs <i>again</i> and returns <i>more</i> sources. A plain channel would clobber the first batch; the <code>_merge_unique_sources</code> reducer keeps the union, de-duped by URL. <b>That single annotation is what makes the research loop accumulate instead of forget.</b></p></div>
+
+      <div class="flow-arrow">↓</div>
+
+      <!-- STAGE 3 -->
+      <div class="node-step"><span class="node-chip"><span class="num">3</span>signal_extractor<span class="adds">adds <code>extracted_signals</code></span></span></div>
+      <p>Reads <code>raw_sources</code>, pulls structured business signals grouped by category, each with evidence URLs and a confidence score.</p>
+      <div class="partial-label">▸ cumulative state after merge <span class="mut">— this is exactly your example</span></div>
+<pre>{
+  <span class="dim"># inputs + control + plan + raw_sources … (unchanged)</span>
+<span class="add">  <span class="tok-s">"extracted_signals"</span>: [
+    {
+      <span class="tok-s">"category"</span>: <span class="tok-s">"funding"</span>,
+      <span class="tok-s">"summary"</span>: <span class="tok-s">"Stripe raised $694M in February 2024 at a $65B valuation."</span>,
+      <span class="tok-s">"evidence_urls"</span>: [<span class="tok-s">"https://techcrunch.com/2024/03/stripe-funding"</span>],
+      <span class="tok-s">"confidence"</span>: <span class="tok-n">0.95</span>
+    },
+    {
+      <span class="tok-s">"category"</span>: <span class="tok-s">"product"</span>,
+      <span class="tok-s">"summary"</span>: <span class="tok-s">"Stripe launched Stablecoin Financial Accounts (hold USDC)."</span>,
+      <span class="tok-s">"evidence_urls"</span>: [<span class="tok-s">"https://stripe.com/newsroom/news/stablecoin-accounts"</span>],
+      <span class="tok-s">"confidence"</span>: <span class="tok-n">0.88</span>
+    },
+    {
+      <span class="tok-s">"category"</span>: <span class="tok-s">"hiring"</span>,
+      <span class="tok-s">"summary"</span>: <span class="tok-s">"200+ engineering roles in Q1 2024, concentrated in infrastructure."</span>,
+      <span class="tok-s">"evidence_urls"</span>: [<span class="tok-s">"https://stripe.com/jobs"</span>],
+      <span class="tok-s">"confidence"</span>: <span class="tok-n">0.72</span>
+    }
+  ]</span>
+}</pre>
+
+      <div class="flow-arrow">↓</div>
+
+      <!-- STAGE 4 -->
+      <div class="node-step"><span class="node-chip"><span class="num">4</span>analyst<span class="adds">adds <code>analysis</code></span></span></div>
+      <p>Synthesizes sources + signals into a prose block: overview, products, target customers, risks, and the gaps it couldn't fill (<code>unknowns</code>).</p>
+      <div class="partial-label">▸ cumulative state after merge</div>
+<pre>{
+  <span class="dim"># … everything above (unchanged) …</span>
+<span class="add">  <span class="tok-s">"analysis"</span>: {
+    <span class="tok-s">"overview"</span>: <span class="tok-s">"Stripe is a payments infrastructure company expanding into..."</span>,
+    <span class="tok-s">"products_services"</span>: [<span class="tok-s">"Payments API"</span>, <span class="tok-s">"Billing"</span>, <span class="tok-s">"Stablecoin Accounts"</span>],
+    <span class="tok-s">"target_customers"</span>:  [<span class="tok-s">"SaaS platforms"</span>, <span class="tok-s">"marketplaces"</span>, <span class="tok-s">"enterprises"</span>],
+    <span class="tok-s">"risks"</span>:            [<span class="tok-s">"Regulatory exposure on stablecoins"</span>, <span class="tok-s">"..."</span>],
+    <span class="tok-s">"unknowns"</span>:         [<span class="tok-s">"Current API pricing tiers for our segment"</span>]
+  }</span>
+}</pre>
+
+      <div class="flow-arrow">↓</div>
+
+      <!-- STAGE 5 -->
+      <div class="node-step"><span class="node-chip q"><span class="num">5</span>quality_check<span class="adds">adds <code>quality</code> → drives the conditional edge</span></span></div>
+      <p>The gate. Scores coverage + confidence and decides whether the brief is good enough or needs another research pass.</p>
+      <div class="partial-label">▸ cumulative state after merge</div>
+<pre>{
+  <span class="dim"># … everything above (unchanged) …</span>
+<span class="add">  <span class="tok-s">"quality"</span>: {
+    <span class="tok-s">"coverage_score"</span>:   <span class="tok-n">0.6</span>,
+    <span class="tok-s">"confidence_score"</span>: <span class="tok-n">0.7</span>,
+    <span class="tok-s">"missing_areas"</span>:    [<span class="tok-s">"API pricing for mid-market"</span>, <span class="tok-s">"competitor displacement angle"</span>],
+    <span class="tok-s">"needs_more_research"</span>: <span class="tok-n">true</span>
+  }</span>
+}</pre>
+      <div class="callout why"><span class="ct">The branch — and why it loops to the planner</span><p><code>needs_more_research</code> is <code>true</code> and <code>missing_areas</code> is non-empty, so the conditional edge routes <b>back to the planner</b> (not the researcher). The planner reads <code>missing_areas</code>, emits <i>new</i> sub-questions (<code>q3</code>, <code>q4</code>), bumps <code>research_iteration</code> to <code>1</code>, and the researcher appends fresh sources via the reducer. On the next pass, if <code>needs_more_research</code> is <code>false</code> (or the iteration cap is hit), it falls through to the reporter.</p></div>
+      <p class="muted" style="font-size:14px">On the second visit, the state's control fields tell the story: <code>"research_iteration": 1</code>, <code>"researched_question_ids": ["q1","q2"]</code> — so the planner knows what's already been chased and only adds new ground.</p>
+
+      <div class="flow-arrow">↓ <span class="muted" style="font-size:13px">(once <code>needs_more_research == false</code>)</span></div>
+
+      <!-- STAGE 6 -->
+      <div class="node-step"><span class="node-chip"><span class="num">6</span>reporter<span class="adds">adds <code>report</code> → END</span></span></div>
+      <p>The terminal node. Assembles the whole state into the nine-section <code>ReportDraft</code>, which is persisted to the <code>reports</code> collection and rendered in the UI.</p>
+      <div class="partial-label">▸ final cumulative state</div>
+<pre>{
+  <span class="dim"># … inputs, plan, raw_sources, extracted_signals, analysis, quality …</span>
+<span class="add">  <span class="tok-s">"report"</span>: {
+    <span class="tok-s">"company_overview"</span>:        <span class="tok-s">"Stripe is a payments infrastructure company..."</span>,
+    <span class="tok-s">"products_and_services"</span>:   [<span class="tok-s">"Payments API"</span>, <span class="tok-s">"Billing"</span>, <span class="tok-s">"Stablecoin Accounts"</span>],
+    <span class="tok-s">"target_customers"</span>:        [<span class="tok-s">"SaaS platforms"</span>, <span class="tok-s">"marketplaces"</span>],
+    <span class="tok-s">"business_signals"</span>:        [ <span class="tok-c">/* the extracted_signals, finalized */</span> ],
+    <span class="tok-s">"risks_and_challenges"</span>:    [<span class="tok-s">"Regulatory exposure on stablecoins"</span>],
+    <span class="tok-s">"suggested_discovery_questions"</span>: [
+      {<span class="tok-s">"question"</span>: <span class="tok-s">"How are you handling USDC settlement at scale?"</span>, <span class="tok-s">"rationale"</span>: <span class="tok-s">"..."</span>}
+    ],
+    <span class="tok-s">"suggested_outreach_strategy"</span>: <span class="tok-s">"Lead with the stablecoin launch as the 'why now'..."</span>,
+    <span class="tok-s">"unknowns"</span>: [<span class="tok-s">"Exact API pricing for our segment"</span>],
+    <span class="tok-s">"sources"</span>:  [ {<span class="tok-s">"url"</span>: <span class="tok-s">"..."</span>, <span class="tok-s">"title"</span>: <span class="tok-s">"..."</span>, <span class="tok-s">"used_in"</span>: [<span class="tok-s">"company_overview"</span>]} ]
+  }</span>
+}</pre>
+
+      <h3>The whole arc in one line</h3>
+      <table class="tbl">
+        <tr><th>Node</th><th>Reads</th><th>Writes (its partial)</th></tr>
+        <tr><td>planner</td><td><code>objective</code>, <code>missing_areas</code></td><td><code>plan</code>, bumps <code>research_iteration</code></td></tr>
+        <tr><td>researcher</td><td><code>plan</code></td><td><code>raw_sources</code> <span class="muted">(accumulates)</span></td></tr>
+        <tr><td>signal_extractor</td><td><code>raw_sources</code></td><td><code>extracted_signals</code></td></tr>
+        <tr><td>analyst</td><td>sources + signals</td><td><code>analysis</code></td></tr>
+        <tr><td>quality_check</td><td><code>analysis</code></td><td><code>quality</code> → branch</td></tr>
+        <tr><td>reporter</td><td>everything</td><td><code>report</code> → END</td></tr>
+      </table>
+      <div class="callout key"><span class="ct">Tie it back to checkpointing</span><p>After <b>each</b> of these merges (every super-step), the whole cumulative dict is snapshotted to Mongo by the custom checkpointer. That's why a crash at, say, the analyst can resume with <code>plan</code>, <code>raw_sources</code>, and <code>extracted_signals</code> already populated — it picks up exactly where this picture left off. <a onclick="goTo('recoverability')">See recoverability →</a></p></div>
+    </section>
+
+    <section id="persistence" data-group="The Project">
+      <div class="sec-head"><div><div class="sec-kicker">The Project</div><h2>Persistence & the naming bridge</h2></div></div>
+      <p>MongoDB via <b>Motor</b> (the async driver). Five collection families: <code>sessions</code>, <code>workflow_runs</code>, <code>reports</code>, <code>chat_messages</code>, and the checkpointer collections. Indexes are created <b>idempotently on startup</b> (<code>ensure_indexes</code>).</p>
+
+      <h3>Why document DB here (a likely question)</h3>
+      <div class="callout why"><span class="ct">Why Mongo, not Postgres</span><p>The report and event shapes are <b>evolving and nested</b> (nine sections, arrays of signals with evidence URLs, an append-only event timeline). A document model fits a shape that's still changing without migrations, and Motor gives async access that matches the streaming workload. The honest counter: if the data were highly relational with strong cross-entity constraints, Postgres + JSONB would be the safer default. You chose flexibility for a single-tenant, evolving schema.</p></div>
+
+      <h3>Indexes you can name</h3>
+      <table class="tbl">
+        <tr><th>Collection</th><th>Index</th><th>Serves</th></tr>
+        <tr><td>sessions</td><td><code>created_at desc</code>, <code>status</code></td><td>the sessions list, filters</td></tr>
+        <tr><td>workflow_runs</td><td><code>session_id</code>, <code>started_at desc</code></td><td>finding a session's runs</td></tr>
+        <tr><td>reports</td><td>unique on <code>session_id</code></td><td>one report per session</td></tr>
+        <tr><td>chat_messages</td><td><code>(session_id, created_at)</code></td><td>ordered history load — a compound index</td></tr>
+      </table>
+      <p>Knowing <i>why</i> the chat index is compound <code>(session_id, created_at)</code> and not two separate indexes is a classic DB question — see <a onclick="goTo('db-indexes')">Indexes & query plans</a>.</p>
+
+      <h3>The camelCase ↔ snake_case bridge</h3>
+      <p>One rule: <b>camelCase on the wire, snake_case everywhere inside the backend and Mongo.</b> A single base model does it:</p>
+<pre><span class="tok-k">class</span> <span class="tok-f">ApiModel</span>(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,   <span class="tok-c"># snake attr → camel alias</span>
+        populate_by_name=<span class="tok-n">True</span>,      <span class="tok-c"># accept either on input</span>
+        from_attributes=<span class="tok-n">True</span>,
+    )</pre>
+      <div class="callout gotcha"><span class="ct">The intentional caveat</span><p>The bridge renames <b>field keys only</b>. Wire <i>values</i> that are enums or event-payload keys stay snake_case — event <code>kind</code> is <code>run_started</code>, a node name is <code>signal_extractor</code>. The frontend treats those as opaque string constants. <span class="muted">(This is in your saved memory — interviewers love a candidate who knows exactly where their own abstraction stops.)</span></p></div>
+    </section>
+
+    <section id="sse" data-group="The Project">
+      <div class="sec-head"><div><div class="sec-kicker">The Project · crown jewel</div><h2>Live updates: SSE + sinceSeq</h2></div></div>
+      <p class="lead">If you get one deep-dive question, hope it's this one. It's the most elegant part of the system and it touches networking, idempotency, and consistency.</p>
+
+      <h3>The problem</h3>
+      <p>A workflow run takes minutes and emits a stream of progress events. The user must see them live, <b>and</b> a page refresh or dropped connection mid-run must not lose or duplicate events. Same for chat token streaming.</p>
+
+      <h3>Why SSE (not WebSocket, not polling)</h3>
+      <table class="tbl">
+        <tr><th>Option</th><th>Verdict</th></tr>
+        <tr><td><b>SSE</b> ✅</td><td>One-way server→client is exactly our shape. Plain HTTP, native browser auto-reconnect, proxy-friendly, no framing to manage.</td></tr>
+        <tr><td>WebSocket</td><td>Bidirectional and powerful — but we have <b>no client→server channel</b>. It adds connection lifecycle, framing, and proxy complexity for zero benefit here.</td></tr>
+        <tr><td>Polling</td><td>Simplest, but chatty and adds visible latency to a <i>token</i> stream. Wrong tool for real-time deltas.</td></tr>
+      </table>
+
+      <h3>The keystone: a monotonic sequence number</h3>
+      <p>Every event carries a per-run <code>seq</code>. The <b>durable record</b> lives in <code>workflow_runs.events</code> in Mongo — Mongo is the source of truth. The stream endpoint takes <code>?since_seq=N</code> and does three things <b>in this order</b>:</p>
+      <ol>
+        <li><b>Subscribe</b> to the in-process event bus <i>before</i> reading backfill — this closes the race where an event lands between snapshot and subscription.</li>
+        <li><b>Backfill</b> stored events with <code>seq &gt; N</code>.</li>
+        <li><b>Tail</b> live events, dropping anything <code>≤ N</code> or already sent (dedupe by <code>seq</code>).</li>
+      </ol>
+      <div class="callout key"><span class="ct">The payoff</span><p>A dropped connection reconnects with its latest <code>seq</code> → <b>no gap, no duplicate.</b> The chat stream mirrors this exactly with token-delta seqs, so a refresh mid-generation replays buffered deltas and tails the rest. This is the same idea as a <b>Kafka consumer offset</b> or <b>TCP sequence numbers</b> — name that analogy and you sound senior.</p></div>
+      <div class="callout gotcha"><span class="ct">Own the limitation</span><p>The event bus and chat buffers are <b>in-process</b>. They don't span replicas — a multi-replica deploy needs <b>Redis pub/sub</b>. But because Mongo is the durable record, a reconnect still recovers correctly even after a restart. Stating this unprompted is a green flag.</p></div>
+
+      <h3>Why subscribe-before-backfill order matters</h3>
+      <p>This is a real concurrency subtlety. If you backfilled first and <i>then</i> subscribed, an event firing in that gap would be missed (not in your backfill snapshot, not yet in your subscription). Subscribing first means worst case you get a <i>duplicate</i> — which dedupe-by-seq harmlessly drops. <b>Prefer at-least-once + idempotent dedupe over a lossy race.</b></p>
+
+      <a href="sse-streaming.html" class="page-card">
+        <div class="pc-k">Standalone deep dive · with real code</div>
+        <div class="pc-t">📡 SSE + sinceSeq, line by line →</div>
+        <div class="pc-d">The full mechanism on its own page: the SSE wire format, the durable-log + seq + dedupe model, and the actual backend code (the event bus, the subscribe→backfill→tail endpoint, the race) plus the frontend client. Grok it to the core.</div>
+        <span class="pc-go">Open the walkthrough →</span>
+      </a>
+    </section>
+
+    <section id="recoverability" data-group="The Project">
+      <div class="sec-head"><div><div class="sec-kicker">The Project</div><h2>Recoverability & the custom checkpointer</h2></div></div>
+      <p>State is checkpointed to Mongo <b>after every LangGraph super-step</b> via a custom <code>MongoCheckpointer</code> implementing LangGraph's <code>BaseCheckpointSaver</code>, keyed by <code>thread_id == session_id</code>.</p>
+
+      <h3>Two recovery paths</h3>
+      <h4>Resume after failure / interruption</h4>
+      <p>A failed run leaves the session <code>failed</code>. <code>POST /run/resume</code> re-invokes the graph with <b><code>None</code> input</b>, so LangGraph continues from the last checkpoint instead of re-running completed nodes. <b>Graceful shutdown</b> (SIGTERM) flips any <code>running</code> session to <code>interrupted</code> (a resumable terminal status) and cancels in-flight chat generation — so a deploy never strands a run.</p>
+      <h4>Refresh / reconnect mid-run</h4>
+      <p>The UI seeds from the persisted run snapshot, then attaches the SSE stream at the last <code>seq</code>. No work lost or redone.</p>
+
+      <div class="callout gotcha"><span class="ct">What's NOT guaranteed (say it before they ask)</span><p><b>Exactly-once external side effects.</b> A node that crashed mid-LLM-call may re-issue that call on resume — so it's <b>at-least-once</b>, not exactly-once. And cross-replica live streaming isn't there (in-process bus). Distinguishing "durable state" from "exactly-once side effects" is a genuinely senior distinction.</p></div>
+
+      <h3>Why a super-step boundary?</h3>
+      <p>LangGraph runs in super-steps (one "tick" of the graph where eligible nodes run). Checkpointing at that boundary means state is always consistent — you never persist a half-updated state mid-node. It's the same instinct as <b>committing a DB transaction at a clean boundary</b>, not mid-write.</p>
+    </section>
+
+    <!-- ════════════════════════ GROUP: DESIGN DECISIONS ════════════════════════ -->
+
+    <section id="decisions" data-group="Design Decisions">
+      <div class="sec-head"><div><div class="sec-kicker">Design Decisions</div><h2>The five tradeoffs, as rehearsed answers</h2></div></div>
+      <p class="lead">Each of these is a complete interview answer in the <b>Context → Decision → Alternatives → Consequence</b> shape. Practice saying them out loud.</p>
+
+      <h3>D1 · OpenRouter as the single LLM gateway</h3>
+      <p><b>Context:</b> six nodes with different cost/quality needs (cheap planning vs. strong synthesis); must run real models without vendor lock-in.</p>
+      <p><b>Decision:</b> route <i>all</i> LLM calls through OpenRouter via the OpenAI-compatible SDK. Models are config strings per node (<code>llm_model_&lt;node&gt;</code>), so each node pins an appropriate tier and a <b>fallback chain</b> handles provider outages.</p>
+      <p><b>Alternatives:</b> direct OpenAI/Anthropic SDKs (best per-provider, but two SDKs/auth paths, no single per-node switch); LiteLLM proxy (similar, but another service to operate solo).</p>
+      <p><b>Consequence:</b> one key, one client, per-node tiering, built-in fallback — at the cost of a hard dependency on OpenRouter uptime. Structured output handled defensively: native JSON-schema where supported, else JSON mode + schema-in-prompt + one repair retry.</p>
+
+      <h3>D2 · SSE with sinceSeq, not WebSocket</h3>
+      <p>Covered in depth in <a onclick="goTo('sse')">Live updates</a>. One-liner: <i>"One-way streams that must survive reconnects. SSE gives plain-HTTP resumability via a monotonic seq; WebSocket's bidirectional power is unused complexity here."</i></p>
+
+      <h3>D3 · Custom Mongo checkpointer</h3>
+      <p><b>Context:</b> runs span minutes and several LLM calls; must resume from a crash; Mongo already runs everything.</p>
+      <p><b>Decision:</b> implement <code>BaseCheckpointSaver</code> against Mongo, keyed by <code>thread_id == session_id</code>.</p>
+      <p><b>Alternatives:</b> in-memory saver (zero setup, loses all on restart — fails the requirement); SQLite saver (durable, but a second datastore, awkward with async Motor); Redis saver (great for ephemeral, but not the system of record).</p>
+      <p><b>Consequence:</b> one datastore, durable resume, checkpoints co-located with the run — at the cost of writing/maintaining the saver yourself.</p>
+
+      <div class="grid2">
+        <div class="card">
+          <h4 style="margin-top:4px">D4 · BM25 over embeddings for chat retrieval</h4>
+          <p>Zero extra deps, low latency, fully offline-testable. Gave up semantic recall — <b>fine at ≤50 sources</b>; at scale, swap to embeddings + a reranker.</p>
+        </div>
+        <div class="card">
+          <h4 style="margin-top:4px">D5 · In-process background tasks over a queue</h4>
+          <p>No infra, instant start. Gave up horizontal scale and cross-process durability of the <i>bus</i> — though state stays durable in Mongo. Breaks down past ~5 concurrent runs.</p>
+        </div>
+      </div>
+      <div class="callout key"><span class="ct">The meta-point to land</span><p>Every one of these is a <b>"right tool for the constraint of one engineer in a time-box, single-tenant"</b> decision, each with a documented escape hatch. That story — <i>"I optimized for shipping correctly under constraints, and I know exactly what to change when the constraints change"</i> — is what senior interviewers are listening for.</p></div>
+    </section>
+
+    <section id="prod-hardening" data-group="Design Decisions">
+      <div class="sec-head"><div><div class="sec-kicker">Design Decisions</div><h2>Production hardening already in</h2></div></div>
+      <p>So your debt list reads as <i>honest</i>, not <i>missing</i>. You can rattle these off:</p>
+      <ul>
+        <li><b>Request-id propagation</b> through every log line and error response — trace one request end to end.</li>
+        <li><b>Structured JSON logs</b> with latency (structlog).</li>
+        <li><b>Per-IP rate limiting</b> (slowapi) on sensitive routes.</li>
+        <li><b>Per-run cost cap</b> — checked at node boundaries.</li>
+        <li><b>Graceful shutdown</b> — running → interrupted (resumable), cancels in-flight chat.</li>
+        <li><b>Health endpoint</b> that probes Mongo + OpenRouter reachability.</li>
+        <li><b>In-process metrics</b> at <code>/api/metrics</code>.</li>
+        <li><b>Frontend:</b> error/loading boundaries, offline banner with paused SSE retries, deduped toasts, client-error reporter.</li>
+      </ul>
+      <p>The single error contract everywhere: <code>{ "error": { "code", "message", "details": { "requestId" } } }</code>.</p>
+    </section>
+
+    <!-- ════════════════════════ GROUP: SCALING ARGUS ════════════════════════ -->
+
+    <section id="scaling-argus" data-group="Scaling Argus">
+      <div class="sec-head"><div><div class="sec-kicker">Scaling Argus</div><h2>"How would you scale this?" — the narrative</h2></div></div>
+      <p class="lead">This is the classic follow-up. You've already written the answer as a debt list; here it is sequenced as a scaling story you can deliver top to bottom.</p>
+
+      <h3>Step 0 · Name the current shape honestly</h3>
+      <p><i>"It's deliberately single-worker, single-tenant. Background runs execute in the FastAPI worker; the event bus is in-process. That's correct for the demo's constraints and it's the first thing to change for scale."</i></p>
+
+      <h3>The scaling ladder</h3>
+      <table class="tbl">
+        <tr><th>Bottleneck</th><th>Fix</th><th>Unlocks</th></tr>
+        <tr><td>Runs block the API worker; ~5 concurrent max</td><td>Move runs to a <b>real queue</b> (Celery / Arq / RQ) with backpressure + retries</td><td>Horizontal scale of workers; API stays responsive</td></tr>
+        <tr><td>In-process event bus can't span replicas</td><td><b>Redis pub/sub</b> for the bus + chat buffers</td><td>Multiple API replicas behind a load balancer</td></tr>
+        <tr><td>BM25 weak past ~50 sources</td><td><b>Embeddings + reranker</b> (vector search)</td><td>Semantic recall at scale</td></tr>
+        <tr><td>Single Mongo</td><td>Read replicas; later <b>shard by tenant/session_id</b></td><td>Read throughput, then write throughput</td></tr>
+        <tr><td>No auth / global sessions</td><td><b>Multi-tenant</b> — sessions scoped to users, API keys/OAuth</td><td>Real users, per-tenant isolation</td></tr>
+        <tr><td>Cost cap is soft, per-run</td><td>Hard <b>pre-flight budget</b> + token accounting</td><td>Predictable spend under load</td></tr>
+      </table>
+
+      <div class="callout key"><span class="ct">The shape of a great scaling answer</span><p>Always go <b>identify the bottleneck → smallest change that removes it → what it now unlocks → the new bottleneck it exposes.</b> Scaling is an iterative game of moving the bottleneck, not a single grand redesign. Saying that explicitly signals maturity.</p></div>
+
+      <h3>Why a queue is the first move</h3>
+      <p>Right now a run holds resources in the request worker's event loop. Under load that means event-loop contention and no backpressure — a burst of runs degrades <i>everything</i>, including fast read requests. A queue <b>decouples submission from execution</b>: the API just enqueues (fast) and workers drain at their own pace. This is the single most important distributed-systems pattern in the whole system — see <a onclick="goTo('queues')">Queues & async work</a>.</p>
+
+      <h3>The stateful catch with multi-replica + SSE</h3>
+      <p>SSE connections are <b>sticky to whichever replica holds the in-process bus that has the events.</b> Two fixes, and you should mention both: <b>(a)</b> Redis pub/sub so any replica can serve any stream, or <b>(b)</b> sticky sessions at the LB as a stopgap. Because Mongo is the durable record, even a hard failover only costs a reconnect — the seq mechanism heals the gap.</p>
+    </section>
+
+    <!-- ════════════════════════ GROUP: SYSTEM DESIGN FUNDAMENTALS ════════════════════════ -->
+
+    <section id="sd-method" data-group="System Design">
+      <div class="sec-head"><div><div class="sec-kicker">System Design</div><h2>A method for the open-ended question</h2></div></div>
+      <p class="lead">"Design a URL shortener / news feed / rate limiter." There's a repeatable structure that keeps you from rambling.</p>
+      <ol>
+        <li><b>Clarify & scope</b> — functional requirements, then non-functional (scale, latency, consistency, read/write ratio). <i>Ask before you design.</i> Nail down "how many users / QPS / data size."</li>
+        <li><b>Back-of-envelope</b> — estimate QPS and storage. Reads vs writes ratio drives everything (caching, replicas).</li>
+        <li><b>API + data model</b> — define the few core endpoints and the main entities/tables.</li>
+        <li><b>High-level diagram</b> — client → LB → app servers → cache → DB, plus async/queue paths.</li>
+        <li><b>Drill into the hard part</b> — they'll steer you (the hot key, the fan-out, the consistency). Go deep there.</li>
+        <li><b>Bottlenecks & tradeoffs</b> — name what breaks first and how you'd evolve it. End where you started Argus's debt list.</li>
+      </ol>
+      <div class="callout info"><span class="ct">Numbers worth memorizing</span><p>1 day ≈ <b>86,400s</b> (~10⁵). So 1M requests/day ≈ <b>~12 req/s</b> average, but plan for <b>~5–10× peak</b>. Memory ns / SSD µs / network ms / disk-seek ms — <b>each layer is ~1000× slower</b> than the one above. Reads usually outnumber writes ~100:1 in consumer apps → cache aggressively.</p></div>
+
+      <a href="url-shortener.html" class="page-card">
+        <div class="pc-k">Worked example · standalone page</div>
+        <div class="pc-t">⚡ Design a URL Shortener →</div>
+        <div class="pc-d">See this exact method applied end to end to the most-asked design question — clarify, estimate, base62 encoding, distributed IDs, the read/write flowcharts, caching, and sharding.</div>
+        <span class="pc-go">Open the full walkthrough →</span>
+      </a>
+    </section>
+
+    <section id="scaling-101" data-group="System Design">
+      <div class="sec-head"><div><div class="sec-kicker">System Design</div><h2>Scaling: vertical, horizontal, stateless</h2></div></div>
+      <h4>Vertical vs horizontal</h4>
+      <p><b>Vertical</b> = bigger machine. Simple, but a hard ceiling and a single point of failure. <b>Horizontal</b> = more machines behind a load balancer. Near-unlimited, fault-tolerant, but requires your app to be <b>stateless</b> so any machine handles any request.</p>
+      <div class="callout why"><span class="ct">Why "stateless" is the magic word</span><p>If a server holds session state in memory, requests must return to that exact server — you can't freely add/remove machines. Push state to a shared store (Redis/DB) and your app tier becomes disposable and trivially scalable. <b>This is exactly Argus's in-process-bus problem:</b> the bus is local state that pins a stream to one replica. Naming that connection scores big.</p></div>
+
+      <h4>Load balancing</h4>
+      <p>Distributes traffic: round-robin, least-connections, or hashing. <b>L4</b> (TCP) vs <b>L7</b> (HTTP, can route by path/header). Also does health checks (pull dead nodes) and TLS termination. In Argus's deploy, <b>nginx</b> is the reverse proxy doing TLS termination in front of Uvicorn.</p>
+
+      <h4>Sticky sessions</h4>
+      <p>LB pins a client to one backend (by cookie/IP). Useful as a stopgap for in-memory state (like our SSE bus) but it <b>undermines even load distribution and fault tolerance</b> — prefer externalizing state instead.</p>
+    </section>
+
+    <section id="caching" data-group="System Design">
+      <div class="sec-head"><div><div class="sec-kicker">System Design</div><h2>Caching</h2></div></div>
+      <p class="lead">The first lever for read-heavy systems. "Add a cache" is the most common right answer in design interviews — but know the failure modes.</p>
+      <h4>Where caches live</h4>
+      <p>Browser → CDN (edge) → reverse proxy → <b>application cache (Redis/Memcached)</b> → DB query cache. Each layer absorbs reads so the layer below sees fewer.</p>
+      <h4>Patterns</h4>
+      <table class="tbl">
+        <tr><th>Pattern</th><th>How</th><th>Note</th></tr>
+        <tr><td><b>Cache-aside</b> (lazy)</td><td>App checks cache; miss → read DB → populate cache</td><td>Most common. Stale risk; needs TTL/invalidation</td></tr>
+        <tr><td>Write-through</td><td>Write to cache + DB together</td><td>Fresh reads; slower writes</td></tr>
+        <tr><td>Write-back</td><td>Write to cache, flush to DB async</td><td>Fast writes; data-loss risk on crash</td></tr>
+      </table>
+      <h4>Invalidation & the three classic failures</h4>
+      <ul>
+        <li><b>Stampede / thundering herd:</b> a hot key expires and 10k requests hit the DB at once. Fix: lock/single-flight, or stagger TTLs.</li>
+        <li><b>Stale data:</b> the cache and DB disagree. The hardest problem in CS ("there are only two hard things…"). TTLs bound staleness; explicit invalidation reduces it.</li>
+        <li><b>Hot key:</b> one key gets disproportionate traffic. Fix: replicate the key, or add a local in-process tier.</li>
+      </ul>
+      <div class="callout info"><span class="ct">Argus tie-in</span><p>Argus caches <code>chat_suggestions</code> on the session document — a tiny, deliberate application-level cache of an expensive-to-generate value. And RTK Query on the frontend is itself a <b>client-side cache with tag-based invalidation</b>.</p></div>
+    </section>
+
+    <section id="databases" data-group="System Design">
+      <div class="sec-head"><div><div class="sec-kicker">System Design</div><h2>Databases: SQL vs NoSQL, replication, sharding</h2></div></div>
+      <h4>SQL vs NoSQL — the real decision</h4>
+      <table class="tbl">
+        <tr><th></th><th>SQL (Postgres/MySQL)</th><th>NoSQL (Mongo/Dynamo)</th></tr>
+        <tr><td>Schema</td><td>Fixed, enforced</td><td>Flexible, app-enforced</td></tr>
+        <tr><td>Strength</td><td>Joins, transactions, constraints</td><td>Horizontal scale, evolving/nested docs</td></tr>
+        <tr><td>Scale model</td><td>Scale up; sharding is harder</td><td>Built to scale out</td></tr>
+        <tr><td>Pick when</td><td>Relational data, strong consistency needs</td><td>Denormalized, high-volume, shape changing</td></tr>
+      </table>
+      <p>Your Argus answer: <i>"Evolving nested report/event shapes, single-tenant, async driver — Mongo fit. Relational integrity wasn't the constraint."</i></p>
+
+      <h4>Replication</h4>
+      <p><b>Leader-follower:</b> one primary takes writes, replicates to read replicas. Scales <i>reads</i> and gives failover. The catch: <b>replication lag</b> → a follower may serve slightly stale data (read-after-write inconsistency). Mongo Atlas runs a replica set; for scale you'd send reads to secondaries.</p>
+
+      <h4>Sharding (partitioning)</h4>
+      <p>Split data across machines by a <b>shard key</b> to scale <i>writes</i>/storage. Choose the key to spread load evenly and keep common queries on one shard. Bad keys → <b>hotspots</b> (one shard overloaded). For Argus you'd shard by <code>session_id</code> or tenant. Cost: cross-shard queries and transactions get hard.</p>
+      <h4>Indexes</h4>
+      <p>An index trades write speed + storage for read speed. See the dedicated <a onclick="goTo('db-indexes')">Indexes & B-trees</a> section.</p>
+    </section>
+
+    <section id="consistency" data-group="System Design">
+      <div class="sec-head"><div><div class="sec-kicker">System Design</div><h2>CAP, consistency, and ACID vs BASE</h2></div></div>
+      <h4>CAP theorem</h4>
+      <p>In a network <b>partition</b> (P — unavoidable in distributed systems), you must choose between <b>C</b>onsistency (every read sees the latest write) and <b>A</b>vailability (every request gets a non-error response). You don't "pick 2 of 3" in the lazy sense — <b>P is given</b>, so it's really <b>C vs A during a partition.</b></p>
+      <ul>
+        <li><b>CP</b> systems (e.g. a strongly-consistent DB) reject/​block during a partition to avoid serving stale data. Pick for money, inventory.</li>
+        <li><b>AP</b> systems (e.g. Dynamo, Cassandra) keep serving and reconcile later. Pick for feeds, carts, likes.</li>
+      </ul>
+      <h4>Consistency models, weakest to strongest</h4>
+      <p><b>Eventual</b> (replicas converge "eventually") → <b>read-your-writes</b> → <b>causal</b> → <b>strong/linearizable</b> (acts like one copy). Stronger = more coordination = higher latency.</p>
+      <h4>ACID vs BASE</h4>
+      <p><b>ACID</b> (Atomic, Consistent, Isolated, Durable) — transactional guarantees, classic RDBMS. <b>BASE</b> (Basically Available, Soft state, Eventual consistency) — the NoSQL/AP philosophy: trade strict consistency for availability and scale.</p>
+      <div class="callout info"><span class="ct">Argus tie-in</span><p>Argus is firmly <b>consistency-tolerant where it can be</b>: SSE replay tolerates at-least-once delivery and dedupes by seq; resume is at-least-once on external side effects. The durable invariant (Mongo as source of truth) is strong; the live layer is eventual. That layered choice is the sophisticated answer.</p></div>
+    </section>
+
+    <section id="queues" data-group="System Design">
+      <div class="sec-head"><div><div class="sec-kicker">System Design</div><h2>Queues & async work</h2></div></div>
+      <p class="lead">The pattern behind Argus's #1 scaling fix, and behind half of all system-design answers.</p>
+      <h4>What a queue buys you</h4>
+      <ul>
+        <li><b>Decoupling</b> — producer (API) and consumer (worker) scale independently.</li>
+        <li><b>Backpressure / smoothing</b> — a traffic spike fills the queue instead of crashing workers.</li>
+        <li><b>Resilience</b> — a worker dies; the message is redelivered. Retries with backoff.</li>
+        <li><b>Async UX</b> — return <code>202 Accepted</code> immediately, do slow work later. (Argus already does this with <code>BackgroundTasks</code> — a queue is the durable, scalable version.)</li>
+      </ul>
+      <h4>Delivery semantics</h4>
+      <p><b>At-most-once</b> (may lose), <b>at-least-once</b> (may duplicate → consumers must be <b>idempotent</b>), <b>exactly-once</b> (expensive, often emulated via dedup + idempotency keys). Most real systems are <b>at-least-once + idempotent consumers</b> — exactly what Argus's seq-dedupe achieves at the stream layer.</p>
+      <h4>Queue vs stream (log)</h4>
+      <p><b>Task queue</b> (RabbitMQ, SQS, Celery): a message is consumed once and gone. <b>Event log</b> (Kafka): an append-only, replayable log; consumers track their own <b>offset</b> and can rewind. <b>Argus's <code>workflow_runs.events</code> + <code>since_seq</code> is a tiny event log</b> — that's the exact analogy to draw.</p>
+    </section>
+
+    <section id="rate-limiting" data-group="System Design">
+      <div class="sec-head"><div><div class="sec-kicker">System Design</div><h2>Rate limiting & idempotency</h2></div></div>
+      <h4>Rate-limiting algorithms</h4>
+      <table class="tbl">
+        <tr><th>Algorithm</th><th>Idea</th><th>Tradeoff</th></tr>
+        <tr><td>Fixed window</td><td>N requests per clock-minute</td><td>Simple; bursty at window edges</td></tr>
+        <tr><td>Sliding window</td><td>Rolling time window</td><td>Smoother; a bit more state</td></tr>
+        <tr><td><b>Token bucket</b></td><td>Tokens refill at rate R, burst up to B</td><td>Allows bursts; the common default</td></tr>
+        <tr><td>Leaky bucket</td><td>Drains at constant rate</td><td>Smooths output, no bursts</td></tr>
+      </table>
+      <p>Argus uses <b>slowapi</b> for per-IP limits on sensitive routes. In a distributed setup, the counter must live in <b>Redis</b> (shared), not per-instance memory — another instance of the stateless principle.</p>
+      <h4>Idempotency</h4>
+      <p>An operation is <b>idempotent</b> if doing it twice equals doing it once. Critical for retries and at-least-once delivery. Techniques: idempotency keys (client sends a UUID; server dedupes), natural idempotence (set-to-value vs increment), and <b>dedupe by sequence number</b> — which is precisely how Argus's SSE replay avoids double-rendering events.</p>
+    </section>
+
+    <!-- ════════════════════════ GROUP: CS FUNDAMENTALS ════════════════════════ -->
+
+    <section id="http" data-group="CS Fundamentals">
+      <div class="sec-head"><div><div class="sec-kicker">CS Fundamentals</div><h2>HTTP, TCP & the network stack</h2></div></div>
+      <h4>The journey of a request</h4>
+      <p>DNS resolve → TCP handshake (SYN, SYN-ACK, ACK) → TLS handshake → HTTP request → response. Each round trip costs an RTT; this is why connection reuse (keep-alive, HTTP/2 multiplexing) and CDNs matter.</p>
+      <h4>TCP vs UDP</h4>
+      <p><b>TCP:</b> connection-oriented, ordered, reliable (acks + retransmit), flow/congestion control. <b>UDP:</b> fire-and-forget, no ordering/delivery guarantee, low overhead — video, games, DNS.</p>
+      <h4>HTTP methods & status codes you must know cold</h4>
+      <p><b>Methods:</b> GET (safe, idempotent), POST (create, not idempotent), PUT (replace, idempotent), PATCH (partial), DELETE (idempotent). <b>Statuses:</b> 200 OK, <b>201</b> Created, <b>202</b> Accepted (async!), 204 No Content, 301/302 redirect, 400 bad request, 401 unauth, 403 forbidden, 404, <b>409</b> conflict, 429 too many requests, 500, 502/503/504 gateway.</p>
+      <div class="callout info"><span class="ct">Argus tie-in</span><p>You use <b>202</b> for "run started, watch the stream," <b>409</b> for "chat with no report yet" and "run already active." Being able to justify a status-code choice is a small but real signal of API maturity.</p></div>
+      <h4>HTTP/1.1 → /2 → /3</h4>
+      <p>1.1: one request per connection at a time (head-of-line blocking). 2: multiplexed streams over one TCP connection. 3: over QUIC/UDP, removes TCP-level head-of-line blocking. SSE runs fine over any of them — it's just a long-lived HTTP response.</p>
+    </section>
+
+    <section id="sse-vs-ws" data-group="CS Fundamentals">
+      <div class="sec-head"><div><div class="sec-kicker">CS Fundamentals</div><h2>SSE vs WebSocket vs polling — the matrix</h2></div></div>
+      <p>You'll get asked to compare these directly. Here's the crisp table.</p>
+      <table class="tbl">
+        <tr><th></th><th>Long polling</th><th>SSE</th><th>WebSocket</th></tr>
+        <tr><td>Direction</td><td>req/resp</td><td><b>server→client</b></td><td>full duplex</td></tr>
+        <tr><td>Protocol</td><td>HTTP</td><td>HTTP (text/event-stream)</td><td>ws:// (upgrade from HTTP)</td></tr>
+        <tr><td>Auto-reconnect</td><td>manual</td><td><b>built-in</b> (+ Last-Event-ID)</td><td>manual</td></tr>
+        <tr><td>Proxy/infra</td><td>trivial</td><td><b>trivial</b></td><td>needs WS-aware infra</td></tr>
+        <tr><td>Binary</td><td>yes</td><td>text only</td><td>yes</td></tr>
+        <tr><td>Best for</td><td>simple, low-freq</td><td><b>live feeds, token streams</b></td><td>chat, games, collab</td></tr>
+      </table>
+      <div class="callout key"><span class="ct">Your one-liner</span><p><i>"SSE's built-in Last-Event-ID reconnect maps perfectly onto my sinceSeq design — the browser hands back the last id it saw and I replay from there. WebSocket would give me a client→server channel I don't need, plus framing and proxy headaches."</i></p></div>
+    </section>
+
+    <section id="concurrency" data-group="CS Fundamentals">
+      <div class="sec-head"><div><div class="sec-kicker">CS Fundamentals</div><h2>Concurrency: async, event loops, threads</h2></div></div>
+      <p class="lead">FastAPI + asyncio is core to Argus, and "what's the difference between concurrency and parallelism" is a perennial.</p>
+      <h4>Concurrency ≠ parallelism</h4>
+      <p><b>Concurrency:</b> dealing with many things at once (interleaving). <b>Parallelism:</b> doing many things at once (multiple cores). A single-threaded event loop is concurrent, not parallel.</p>
+      <h4>The async event loop</h4>
+      <p>One thread runs a loop. On an <code>await</code> at an I/O point (network, DB), the coroutine <b>yields</b> control; the loop runs other ready coroutines until the I/O completes. Perfect for <b>I/O-bound</b> work (like Argus: mostly waiting on LLM/search/Mongo). <b>Useless for CPU-bound</b> work — a heavy computation blocks the whole loop.</p>
+      <div class="callout gotcha"><span class="ct">The classic gotcha</span><p>A blocking call (sync DB driver, <code>time.sleep</code>, big CPU loop) inside an async handler <b>freezes every other request</b> on that worker. That's why Argus uses <b>Motor</b> (async Mongo) and the OpenAI <i>async</i> client — and why moving CPU/blocking work to a thread pool or a separate worker matters. It also explains your "~5 concurrent runs" ceiling: background runs share the event loop.</p></div>
+      <h4>Processes vs threads vs coroutines</h4>
+      <table class="tbl">
+        <tr><td><b>Process</b></td><td>own memory; isolated; heavy; true parallelism</td></tr>
+        <tr><td><b>Thread</b></td><td>shared memory; lighter; needs locks; GIL limits CPU parallelism in CPython</td></tr>
+        <tr><td><b>Coroutine</b></td><td>cooperative; thousands cheap; one thread; great for I/O</td></tr>
+      </table>
+      <h4>Race conditions & coordination</h4>
+      <p>Shared mutable state + concurrent access = races. Tools: locks/mutexes, semaphores, atomic ops, or <b>avoiding shared state</b> (message passing). Argus's "subscribe before backfill" ordering is a race-avoidance design — it makes a duplicate (harmless, dedupable) impossible to become a loss.</p>
+    </section>
+
+    <section id="db-indexes" data-group="CS Fundamentals">
+      <div class="sec-head"><div><div class="sec-kicker">CS Fundamentals</div><h2>Indexes, B-trees & query plans</h2></div></div>
+      <h4>Why an index is fast</h4>
+      <p>Without one, a query scans every document (<b>O(n)</b>). An index is usually a <b>B-tree</b> — a balanced, high-fanout tree giving <b>O(log n)</b> lookups, range scans, and sorted reads. The cost: every write must also update the index (slower writes + storage).</p>
+      <h4>Compound indexes & the prefix rule</h4>
+      <p>Argus's <code>chat_messages</code> index is <code>(session_id, created_at)</code>. Order matters: this index serves "messages for a session, sorted by time" in one shot — it filters by <code>session_id</code> then the tree is already ordered by <code>created_at</code>, so no separate sort step.</p>
+      <div class="callout why"><span class="ct">Why compound beats two single indexes</span><p>Two separate indexes force the DB to intersect results or pick one and re-sort. A compound index on <code>(a, b)</code> can satisfy filter-on-<code>a</code>-sort-by-<code>b</code> directly. <b>The prefix rule:</b> an index on <code>(a,b)</code> also serves queries on <code>a</code> alone, but <i>not</i> on <code>b</code> alone. Leftmost prefix wins.</p></div>
+      <h4>Reading a query plan</h4>
+      <p>Look for <b>index scan</b> (good) vs <b>collection/table scan</b> (bad at scale). <code>explain()</code> in Mongo / <code>EXPLAIN ANALYZE</code> in Postgres. Watch for in-memory sorts that should be index-ordered.</p>
+    </section>
+
+    <section id="data-structures" data-group="CS Fundamentals">
+      <div class="sec-head"><div><div class="sec-kicker">CS Fundamentals</div><h2>Data structures & complexity refresher</h2></div></div>
+      <h4>Big-O cheat sheet</h4>
+      <table class="tbl">
+        <tr><th>Structure</th><th>Access</th><th>Search</th><th>Insert</th><th>Use for</th></tr>
+        <tr><td>Array / list</td><td>O(1)</td><td>O(n)</td><td>O(n)</td><td>ordered, indexed</td></tr>
+        <tr><td>Hash map</td><td>—</td><td>O(1) avg</td><td>O(1) avg</td><td>lookups, dedup, caches</td></tr>
+        <tr><td>Balanced BST / B-tree</td><td>—</td><td>O(log n)</td><td>O(log n)</td><td>sorted, ranges, indexes</td></tr>
+        <tr><td>Heap</td><td>—</td><td>O(n)</td><td>O(log n)</td><td>top-k, priority queue</td></tr>
+        <tr><td>Queue / stack</td><td>—</td><td>—</td><td>O(1)</td><td>BFS / DFS, buffers</td></tr>
+        <tr><td>Graph</td><td>—</td><td>BFS/DFS O(V+E)</td><td>—</td><td>dependencies, routing</td></tr>
+      </table>
+      <div class="callout info"><span class="ct">Argus tie-in</span><p>A LangGraph workflow <b>is a directed graph</b> (with a cycle — the research loop). The dedupe-by-URL reducer is a <b>hash set</b>. The seq-dedupe is a hash lookup. Tying a data structure to a real use in your system is far more memorable than reciting Big-O.</p></div>
+      <h4>BM25, briefly (you'll be asked)</h4>
+      <p>A <b>lexical</b> ranking function: scores a document for a query by term frequency × inverse document frequency, with length normalization and saturation. <b>Keyword match, no semantics</b> — "fast, no embeddings, no extra deps." Contrast with vector/embedding search, which captures meaning but needs a model + a vector store.</p>
+    </section>
+
+    <!-- ════════════════════════ GROUP: RAPID FIRE ════════════════════════ -->
+
+    <section id="qa-argus" data-group="Rapid-fire Q&amp;A">
+      <div class="sec-head"><div><div class="sec-kicker">Flashcards</div><h2>Rapid-fire: about Argus</h2></div></div>
+      <p class="lead">Click to reveal. Practice answering <i>before</i> you open each one.</p>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Walk me through what happens when a user clicks "Run."</summary><div class="qa-body"><p>POST returns <code>202</code> instantly after guarding (session exists, no active run) and registering a background task. The runner binds a RunContext (run id, seq counter, event bus, cost cap) and invokes the LangGraph with <code>thread_id = session_id</code>. Each node emits <code>node_started → node_output* → node_finished</code> events that are both appended to <code>workflow_runs.events</code> in Mongo <i>and</i> published to the in-process bus. The browser separately opens an SSE connection that backfills stored events past its <code>since_seq</code> then tails live ones. On success the run is marked completed and raw sources persisted (they fuel chat); on error, marked failed.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why SSE and not WebSocket?</summary><div class="qa-body"><p>The data flow is one-way: server → client. SSE is plain HTTP with native auto-reconnect and a built-in Last-Event-ID that maps onto my <code>sinceSeq</code> resume. WebSocket gives a client→server channel I don't use, and adds connection lifecycle, framing, and proxy complexity. Polling would add latency to a token stream and be chatty.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How do you guarantee no lost or duplicate events on reconnect?</summary><div class="qa-body"><p>Every event has a per-run monotonic <code>seq</code>; Mongo's <code>events</code> array is the durable source of truth. On (re)connect with <code>since_seq=N</code> the server subscribes to the bus <i>first</i>, backfills <code>seq &gt; N</code>, then tails live events dropping any <code>≤ N</code> or already sent. Subscribe-before-backfill closes the race; dedupe-by-seq makes the worst case a harmless duplicate rather than a loss. Same mechanism for chat token deltas.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How does a crashed run resume without redoing work?</summary><div class="qa-body"><p>A custom <code>MongoCheckpointer</code> (LangGraph <code>BaseCheckpointSaver</code>) snapshots state after every super-step, keyed by <code>thread_id = session_id</code>. <code>POST /run/resume</code> re-invokes the graph with <code>None</code> input, so LangGraph continues from the last checkpoint. Caveat: external side effects are at-least-once — a node that died mid-LLM-call may re-issue it.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why does the quality loop go back to the planner, not the researcher?</summary><div class="qa-body"><p>Looping to the researcher would re-run it against the same plan and gather nothing new. The planner converts the <code>missing_areas</code> into fresh sub-questions so the next pass chases new gaps. Bounded by a max-iterations cap and only taken when there are missing areas.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What breaks first under load, and how would you fix it?</summary><div class="qa-body"><p>Background runs execute in the FastAPI worker's event loop — past ~5 concurrent runs you get event-loop contention and no backpressure. First fix: move runs to a real queue (Celery/Arq/RQ) with backpressure and retries. That then exposes the in-process event bus as the next limit → Redis pub/sub so any replica can serve any SSE stream. Mongo stays the durable record throughout, so reconnects heal gaps.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How is the LLM grounded so chat answers cite sources?</summary><div class="qa-body"><p>On a chat message, I load the latest completed run's raw sources, BM25-select the most relevant, and build a prompt from a preamble + the report markdown + a numbered source pack + the last 10 messages. The model is instructed to cite with <code>[i]</code> markers; on completion I parse those markers back into structured citations stored on the message.</p></div></details>
+    </section>
+
+    <section id="qa-general" data-group="Rapid-fire Q&amp;A">
+      <div class="sec-head"><div><div class="sec-kicker">Flashcards</div><h2>Rapid-fire: fundamentals</h2></div></div>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Concurrency vs parallelism?</summary><div class="qa-body"><p>Concurrency is structuring work so multiple tasks make progress by interleaving (one core can do it). Parallelism is literally executing multiple tasks simultaneously (needs multiple cores). An async event loop is concurrent but single-threaded.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>CAP theorem in one breath?</summary><div class="qa-body"><p>During a network partition you must choose between consistency (every read sees the latest write) and availability (every request gets a response). Partitions are unavoidable, so it's really C-vs-A when one happens. CP for money/inventory, AP for feeds/carts.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How would you scale a read-heavy service?</summary><div class="qa-body"><p>Cache aggressively (cache-aside + TTLs), add read replicas, put a CDN in front of static/edge-cacheable content, and make the app tier stateless behind a load balancer so you can add machines. Then watch for hot keys and cache stampedes, and bound staleness with TTLs/invalidation.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why must consumers of an at-least-once queue be idempotent?</summary><div class="qa-body"><p>Because a message can be redelivered (worker crash after processing but before ack, retries). If processing isn't idempotent, you double-charge / double-send. Use idempotency keys, dedupe by id, or naturally idempotent operations (set vs increment).</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why is a compound index <code>(a, b)</code> better than two indexes here?</summary><div class="qa-body"><p>It serves filter-on-<code>a</code>-then-sort-by-<code>b</code> in a single ordered traversal — no result intersection, no separate sort. By the leftmost-prefix rule it also serves queries on <code>a</code> alone. Two single indexes would force an intersection or a re-sort.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What makes a service horizontally scalable?</summary><div class="qa-body"><p>Statelessness. If no request depends on in-memory state local to one server, any server can handle any request, so you can add/remove machines freely behind a load balancer. Push state to a shared store (Redis/DB). The opposite — like an in-process event bus — pins clients to one node.</p></div></details>
+    </section>
+
+    <section id="closing" data-group="Rapid-fire Q&amp;A">
+      <div class="sec-head"><div><div class="sec-kicker">The morning of</div><h2>Final checklist</h2></div></div>
+      <div class="card">
+        <ul>
+          <li>☐ Can draw the architecture diagram from memory</li>
+          <li>☐ Can draw the 6-node graph and explain the loop-to-planner</li>
+          <li>☐ Can recite the SSE + sinceSeq mechanism (subscribe → backfill → tail)</li>
+          <li>☐ Can deliver all 5 design decisions in Context→Decision→Alt→Consequence form</li>
+          <li>☐ Can give the scaling ladder: queue → Redis bus → embeddings → shard → multi-tenant</li>
+          <li>☐ Can state CAP, consistency models, ACID/BASE crisply</li>
+          <li>☐ Can explain async event loop + why blocking calls are fatal</li>
+          <li>☐ Have one honest "what I'd do with two more weeks" answer ready</li>
+        </ul>
+      </div>
+      <div class="callout key"><span class="ct">Last thing</span><p>When you don't know something, the senior move is: <i>"I haven't worked with that directly, but I'd reason about it as…"</i> and apply a fundamental. They're testing how you think, not what you've memorized. You built something genuinely good — let that confidence show. Good luck.</p></div>
+      <p class="footer-note">This site is yours to grow. Add a <code>&lt;section id="…" data-group="…"&gt;</code> and it appears in the sidebar automatically. We'll keep expanding it as you grok more.</p>
+    </section>
+
+    <div class="no-results" id="noResults">No topics match your filter.</div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

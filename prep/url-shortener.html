@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Design a URL Shortener · Deep Dive</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1' stroke='%2356d364' stroke-width='2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+<button class="menu-toggle" aria-label="Menu" onclick="document.querySelector('.sidebar').classList.toggle('open')">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+
+<div class="app">
+  <aside class="sidebar">
+    <a href="index.html" class="back-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      Back to Argus Prep
+    </a>
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#dffbe4" stroke-width="2"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">URL Shortener</div>
+        <div class="brand-sub">System Design · grok it</div>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="search" id="search" placeholder="Filter topics…  (press /)" autocomplete="off" />
+    </div>
+
+    <nav id="nav"></nav>
+  </aside>
+
+  <main class="content">
+    <header class="hero">
+      <h1>Design a <span class="grad">URL shortener</span></h1>
+      <p>Like TinyURL or bit.ly: turn <code>https://a-very-long-link.com/…</code> into <code>short.ly/xY7aB2</code>, and redirect anyone who visits the short link back to the original. We'll build it from first principles until it actually clicks.</p>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar"><i id="progressFill"></i></div>
+        <div class="progress-label" id="progressLabel">0 of 0 sections reviewed</div>
+      </div>
+      <div class="hero-meta">
+        <span><b>Why this one</b> · the most-asked design question</span>
+        <span><b>Pattern</b> · a key-value store at massive read scale</span>
+      </div>
+    </header>
+
+    <div class="content-inner" id="sections">
+
+    <!-- ════════════ ORIENT ════════════ -->
+    <section id="why" data-group="Orient">
+      <div class="sec-head"><div><div class="sec-kicker">Start here</div><h2>Why this question is everywhere</h2></div></div>
+      <p class="lead">A URL shortener looks trivial — "just store a mapping" — and that's exactly why interviewers love it. The simple core lets them keep asking <i>"okay, now make it handle a billion redirects a day"</i> and watch how you reason about scale, IDs, caching, and data partitioning.</p>
+      <p>Almost every sub-skill of system design shows up here:</p>
+      <table class="tbl">
+        <tr><th>They're really testing</th><th>Via the sub-question</th></tr>
+        <tr><td>Estimation</td><td>"How much storage in 5 years? What QPS?"</td></tr>
+        <tr><td>Algorithm design</td><td>"How do you generate the short code?"</td></tr>
+        <tr><td>Distributed systems</td><td>"How do two servers not generate the same code?"</td></tr>
+        <tr><td>Caching & read scale</td><td>"Redirects are 100× the writes — now what?"</td></tr>
+        <tr><td>Data partitioning</td><td>"One DB can't hold it. How do you shard?"</td></tr>
+      </table>
+      <div class="callout key"><span class="ct">If you remember one thing</span><p>A URL shortener is fundamentally a <b>distributed hash map</b>: <code>short code → long URL</code>. <b>Writes are rare, reads are enormous, and reads must be fast.</b> Every design decision flows from that one sentence. Say it out loud at the start of the interview.</p></div>
+    </section>
+
+    <section id="insight" data-group="Orient">
+      <div class="sec-head"><div><div class="sec-kicker">The core insight</div><h2>It's a key-value lookup. That's it.</h2></div></div>
+      <p>Strip everything away and the whole product is two operations on a dictionary:</p>
+<pre><span class="tok-c"># write (rare)</span>
+db[<span class="tok-s">"xY7aB2"</span>] = <span class="tok-s">"https://some-very-long-url.com/path?x=1"</span>
+
+<span class="tok-c"># read (constant, massive)</span>
+long_url = db[<span class="tok-s">"xY7aB2"</span>]   <span class="tok-c"># → then HTTP redirect the browser there</span></pre>
+      <p>Everything hard about the problem is a consequence of three pressures on that tiny dictionary:</p>
+      <ol class="steps">
+        <li><b>The key must be short and unique.</b> How do you mint a brand-new 7-character code, billions of times, with no collisions, across many servers? → the <a onclick="goTo('id-gen')">ID generation</a> problem.</li>
+        <li><b>The reads are gigantic and latency-sensitive.</b> A click should redirect in milliseconds. → <a onclick="goTo('caching')">caching</a> + read replicas.</li>
+        <li><b>The data outgrows one machine.</b> Billions of rows. → <a onclick="goTo('scaling')">sharding</a>.</li>
+      </ol>
+      <p>Hold that frame. Now we build it the way you'd build it live in the interview.</p>
+    </section>
+
+    <!-- ════════════ THE DESIGN ════════════ -->
+    <section id="requirements" data-group="The Design">
+      <div class="sec-head"><div><div class="sec-kicker">Step 1</div><h2>Clarify requirements (do this first, always)</h2></div></div>
+      <p class="lead">Never start drawing boxes. Spend the first 2–3 minutes scoping. It signals seniority and stops you from designing the wrong thing.</p>
+      <h4>Functional requirements (what it does)</h4>
+      <ul>
+        <li><b>Shorten:</b> given a long URL, return a short URL.</li>
+        <li><b>Redirect:</b> given a short URL, send the user to the original.</li>
+        <li><i>(Probe these):</i> custom aliases (<code>short.ly/my-brand</code>)? Link expiry? Analytics (click counts)? User accounts?</li>
+      </ul>
+      <h4>Non-functional requirements (the qualities that shape the design)</h4>
+      <ul>
+        <li><b>High availability.</b> If redirects are down, every existing link is broken. This is the scariest failure.</li>
+        <li><b>Low latency.</b> Redirects must feel instant (&lt; ~100ms).</li>
+        <li><b>Massive read scale,</b> read:write ≈ <b>100:1</b> (people click far more than they create).</li>
+        <li><b>Short codes</b> — as short as reasonable.</li>
+        <li><b>Not easily guessable</b> (sometimes — depends on whether links are "secret").</li>
+      </ul>
+      <div class="callout key"><span class="ct">Questions to actually ask the interviewer</span><p>"How many URLs created per day?" · "What's the read-to-write ratio?" · "How long should links live — forever?" · "Do we need custom aliases or analytics?" · "Should codes be unpredictable?" Their answers <b>define your numbers and your data model.</b> Pretend they said: 100M new URLs/day, 100:1 reads, links live ~5 years, analytics yes-but-later.</p></div>
+    </section>
+
+    <section id="estimation" data-group="The Design">
+      <div class="sec-head"><div><div class="sec-kicker">Step 2</div><h2>Back-of-the-envelope estimation</h2></div></div>
+      <p class="lead">Just enough arithmetic to justify your choices. Don't skip it — the numbers literally decide how long your short code is and whether you need a cache.</p>
+      <p><b>Given:</b> 100M new URLs/day, read:write = 100:1, store for 5 years.</p>
+      <h4>Traffic (QPS)</h4>
+<pre>Writes:  100,000,000 / day  ÷  86,400 s/day  ≈  <b>~1,160 writes/sec</b>
+Reads:   100:1 ratio                          ≈  <b>~116,000 reads/sec</b>
+(plan for ~2× peak → design for ~230k reads/sec)</pre>
+      <h4>Storage (5 years)</h4>
+<pre>URLs over 5 yrs:  100M/day × 365 × 5   ≈  <b>~182 billion URLs</b>
+Per record:       short code + long URL + metadata  ≈ ~500 bytes
+Total:            182B × 500 B          ≈  <b>~91 TB</b></pre>
+      <div class="stats">
+        <div class="stat"><div class="v">~1.2k</div><div class="l">writes / sec</div></div>
+        <div class="stat"><div class="v gold">~116k</div><div class="l">reads / sec</div></div>
+        <div class="stat"><div class="v blue">~182B</div><div class="l">URLs in 5 yrs</div></div>
+        <div class="stat"><div class="v">~91 TB</div><div class="l">storage</div></div>
+      </div>
+      <div class="callout why"><span class="ct">What these numbers prove</span><p><b>(1)</b> 116k reads/sec is way too much for a single DB → <b>we need a cache + replicas</b>. <b>(2)</b> 91 TB won't fit on one machine → <b>we need sharding</b>. <b>(3)</b> We'll create up to ~182B codes → that tells us <b>how many characters the short code needs</b> (next section). You've now justified the three hardest parts of the design with arithmetic. That's the whole point of estimation.</p></div>
+    </section>
+
+    <section id="api" data-group="The Design">
+      <div class="sec-head"><div><div class="sec-kicker">Step 3</div><h2>The API</h2></div></div>
+      <p>Two endpoints. Keep it boring.</p>
+<pre><span class="tok-c"># create a short URL</span>
+<span class="tok-f">POST</span> /api/shorten
+   body:  { <span class="tok-s">"longUrl"</span>: <span class="tok-s">"https://example.com/very/long/path"</span>,
+            <span class="tok-s">"customAlias"</span>: <span class="tok-s">"my-link"</span>   <span class="tok-c"># optional</span>,
+            <span class="tok-s">"expiresAt"</span>: <span class="tok-s">"2030-01-01"</span>     <span class="tok-c"># optional</span> }
+   → 201 { <span class="tok-s">"shortUrl"</span>: <span class="tok-s">"https://short.ly/xY7aB2"</span> }
+
+<span class="tok-c"># the redirect — this is the hot path, 100× the traffic</span>
+<span class="tok-f">GET</span> /{shortCode}
+   → 301/302 redirect  →  Location: https://example.com/very/long/path</pre>
+      <div class="callout info"><span class="ct">Note the asymmetry</span><p>The <i>read</i> endpoint is just <code>GET /{shortCode}</code> at the root — short and clean, because it's what users paste and click billions of times. The <i>write</i> endpoint is a normal JSON API. Already the design reflects "reads dominate."</p></div>
+    </section>
+
+    <section id="data-model" data-group="The Design">
+      <div class="sec-head"><div><div class="sec-kicker">Step 4</div><h2>The data model</h2></div></div>
+      <p>One core table/collection. The access pattern is "look up by short code," so the short code is the primary key.</p>
+      <table class="tbl">
+        <tr><th>Field</th><th>Type</th><th>Note</th></tr>
+        <tr><td><b>short_code</b></td><td>string (PK)</td><td>e.g. <code>xY7aB2</code> — the lookup key</td></tr>
+        <tr><td>long_url</td><td>string</td><td>the destination</td></tr>
+        <tr><td>created_at</td><td>timestamp</td><td></td></tr>
+        <tr><td>expires_at</td><td>timestamp?</td><td>null = never</td></tr>
+        <tr><td>user_id</td><td>string?</td><td>if accounts exist</td></tr>
+        <tr><td>click_count</td><td>int</td><td>analytics (or a separate store)</td></tr>
+      </table>
+      <h4>SQL or NoSQL here?</h4>
+      <div class="callout why"><span class="ct">Why NoSQL is the common answer</span><p>The access pattern is a <b>pure key lookup</b> by <code>short_code</code> — no joins, no complex queries. We need it to <b>scale horizontally to 91 TB / 100B+ rows</b>. A key-value / wide-column store (DynamoDB, Cassandra) is built exactly for this: huge scale, simple lookups, easy sharding by key. SQL <i>works</i> (and is fine to start), but it scales out less naturally. Say: <i>"I'd reach for a key-value store because the access pattern is a single-key lookup at extreme scale — but SQL with sharding is a reasonable v1."</i></p></div>
+    </section>
+
+    <!-- ════════════ THE CORE PROBLEM ════════════ -->
+    <section id="encoding" data-group="The Core Problem">
+      <div class="sec-head"><div><div class="sec-kicker">The heart of it</div><h2>How short is the code? Base62 math</h2></div></div>
+      <p class="lead">This is the part interviewers actually want to see. How do we make codes that are short, unique, and use URL-safe characters?</p>
+      <h4>Base62: the alphabet</h4>
+      <p>Use the 62 URL-safe characters: <code>a–z</code> (26) + <code>A–Z</code> (26) + <code>0–9</code> (10) = <b>62</b>. Each character of the code is one "digit" in base 62. So a code of length <i>n</i> can represent <code>62ⁿ</code> distinct values:</p>
+<pre>62<sup>5</sup>  =        916,132,832   (~0.9 billion)
+62<sup>6</sup>  =     56,800,235,584   (~56 billion)
+62<sup>7</sup>  =  3,521,614,606,208   (~3.5 <b>trillion</b>)</pre>
+      <div class="callout key"><span class="ct">The conclusion</span><p>We estimated ~182 billion URLs in 5 years. <b>62⁶ ≈ 56B</b> isn't quite enough; <b>62⁷ ≈ 3.5 trillion</b> is plenty with huge headroom. So a <b>7-character code</b> is the answer. (bit.ly and friends use ~7.) Being able to derive "7 characters" from your traffic estimate is a chef's-kiss moment in the interview.</p></div>
+      <h4>Why base62 and not, say, hex or base64?</h4>
+      <ul>
+        <li><b>Hex (base16)</b> would need far more characters for the same range (16⁷ is tiny) → longer codes.</li>
+        <li><b>Base64</b> adds <code>+</code> and <code>/</code> (and <code>=</code> padding) — not URL-safe without escaping.</li>
+        <li><b>Base62</b> is the sweet spot: only letters+digits, all URL-safe, short codes.</li>
+      </ul>
+    </section>
+
+    <section id="id-gen" data-group="The Core Problem">
+      <div class="sec-head"><div><div class="sec-kicker">The heart of it</div><h2>Generating the code: 3 approaches</h2></div></div>
+      <p class="lead">We know codes are 7 base62 chars. But <i>how</i> do we pick the next one so it's unique — especially across many servers? This is the make-or-break discussion.</p>
+
+      <h3>Approach A · Hash the long URL</h3>
+      <p>Run the long URL through a hash (MD5/SHA-256), take the first ~7 base62 chars.</p>
+      <div class="flow-split">
+        <div class="card" style="flex:1;min-width:240px"><h4 style="margin-top:2px;color:var(--accent)">Pros</h4><ul><li>Stateless — no counter to coordinate.</li><li>Same URL → same code (free dedup).</li></ul></div>
+        <div class="card" style="flex:1;min-width:240px"><h4 style="margin-top:2px;color:var(--rose)">Cons</h4><ul><li><b>Collisions:</b> two different URLs can hash to the same 7 chars. Must check the DB and re-hash (append a salt) on conflict.</li><li>Truncating a hash wastes its uniqueness; collision rate grows as you fill up.</li></ul></div>
+      </div>
+
+      <h3>Approach B · Counter + base62 encode <span class="pill acc">most recommended</span></h3>
+      <p>Keep a single global counter. Every new URL gets the next integer; <b>encode that integer to base62</b> and you have the code.</p>
+<pre>id = <span class="tok-n">1</span>           → base62 → <span class="tok-s">"1"</span>
+id = <span class="tok-n">125</span>         → base62 → <span class="tok-s">"21"</span>
+id = <span class="tok-n">100000000000</span> → base62 → <span class="tok-s">"1L9zO9O"</span>   (7 chars)</pre>
+      <div class="callout why"><span class="ct">Why this is elegant</span><p>The counter is <b>monotonic and unique by construction — collisions are literally impossible.</b> Base62-encoding an ever-increasing integer just walks through the code space in order. No DB lookup to check for conflicts on write. The only hard part: <b>making the counter work across many servers</b> (next).</p></div>
+      <div class="callout gotcha"><span class="ct">The catch: codes become guessable</span><p>Sequential IDs mean code <code>xY7aB3</code> is "next to" <code>xY7aB2</code> — someone can enumerate your links. Fixes: encode with a secret permutation/bijection of the ID space, or interleave/scramble bits. Mention this tradeoff; it shows depth.</p></div>
+
+      <h3>Approach C · Key Generation Service (KGS)</h3>
+      <p>A standalone service <b>pre-generates</b> millions of unique random codes <i>offline</i> and stores them in a "available keys" table. On a write, an app server just <b>grabs one</b> and marks it used. Generation is decoupled from the request path entirely.</p>
+      <ul>
+        <li><b>Pro:</b> no collision checks on the hot path, no sequential-guessing problem, codes can be random.</li>
+        <li><b>Con:</b> the KGS is a component to build + make highly available; needs careful concurrency so two servers never hand out the same key (give each app server a <i>block</i> of keys to avoid contention).</li>
+      </ul>
+
+      <h3 id="distributed-id">The real challenge: a unique counter across many servers</h3>
+      <p>Approach B needs <i>one</i> source of truth for "the next number," but a single counter is a bottleneck and a single point of failure. Options:</p>
+      <table class="tbl">
+        <tr><th>Technique</th><th>How</th><th>Tradeoff</th></tr>
+        <tr><td><b>Ranges / blocks</b> <span class="pill acc">clean</span></td><td>A coordinator hands each app server a <b>block</b> of IDs (e.g. 1–1000, then 1001–2000). Servers mint locally from their block, fetch a new block when empty.</td><td>Almost no coordination on the hot path; gaps if a server dies (fine). The standard answer.</td></tr>
+        <tr><td>Redis <code>INCR</code></td><td>Atomic increment on a single fast in-memory counter.</td><td>Simple; Redis becomes a critical dependency (replicate it).</td></tr>
+        <tr><td>Snowflake-style ID</td><td>Compose a unique 64-bit ID from <code>timestamp + machineId + sequence</code> — no coordination at all.</td><td>IDs are bigger; codes a touch longer. Used by Twitter/Instagram.</td></tr>
+        <tr><td>DB auto-increment</td><td>Let one SQL DB own the sequence.</td><td>Simplest, but a write bottleneck + SPOF at scale.</td></tr>
+      </table>
+      <div class="callout key"><span class="ct">What to say</span><p><i>"I'd use a counter encoded to base62 for guaranteed-unique codes, and distribute the counter by handing each app server a block of IDs from a coordinator — so there's no per-request contention. If guessability matters, I'd scramble the ID before encoding. Hashing and a KGS are valid alternatives with different tradeoffs."</i> That single paragraph covers the whole topic.</p></div>
+    </section>
+
+    <!-- ════════════ THE FLOWS ════════════ -->
+    <section id="write-flow" data-group="The Flows">
+      <div class="sec-head"><div><div class="sec-kicker">Flowchart</div><h2>The write path (shorten)</h2></div></div>
+      <p>The rare operation. A user submits a long URL; we mint a code and store the mapping.</p>
+      <div class="flow">
+        <div class="flow-box start"><b>① Client</b><span class="sub">POST /shorten { longUrl }</span></div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-box"><b>② Load balancer → App server</b><span class="sub">validate the URL, check auth/rate limit</span></div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-box decision"><b>③ Custom alias requested?</b></div>
+        <div class="flow-split">
+          <div class="flow-branch yes">
+            <span class="blabel">YES</span>
+            <div class="flow-box"><b>Is alias taken?</b><span class="sub">check DB; if taken → 409 error</span></div>
+          </div>
+          <div class="flow-branch no">
+            <span class="blabel">NO</span>
+            <div class="flow-box"><b>Get next unique ID</b><span class="sub">from this server's ID block → base62 encode → code</span></div>
+          </div>
+        </div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-box db"><b>④ Store mapping</b><span class="sub">db[shortCode] = longUrl (+ metadata)</span></div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-box end"><b>⑤ Return short URL</b><span class="sub">201 → https://short.ly/{shortCode}</span></div>
+      </div>
+      <div class="callout info"><span class="ct">Why no collision check in the no-alias branch</span><p>Because the counter-to-base62 code is unique by construction, step ④ is a plain insert — no "is this code taken?" round-trip. That's the payoff of Approach B. (With hashing, you'd add a "check & retry on collision" loop here.)</p></div>
+    </section>
+
+    <section id="read-flow" data-group="The Flows">
+      <div class="sec-head"><div><div class="sec-kicker">Flowchart · the hot path</div><h2>The read path (redirect)</h2></div></div>
+      <p class="lead">This runs ~116,000 times a second. Every millisecond and every cache hit matters. This is the flow they'll scrutinize.</p>
+      <div class="flow">
+        <div class="flow-box start"><b>① Browser hits short link</b><span class="sub">GET short.ly/xY7aB2</span></div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-box"><b>② Load balancer → App server</b></div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-box cache decision"><b>③ Look in cache (Redis)</b><span class="sub">shortCode → longUrl ?</span></div>
+        <div class="flow-split">
+          <div class="flow-branch yes">
+            <span class="blabel">CACHE HIT (~80%+)</span>
+            <div class="flow-box cache"><b>Got longUrl</b><span class="sub">skip the database entirely</span></div>
+          </div>
+          <div class="flow-branch no">
+            <span class="blabel">CACHE MISS</span>
+            <div class="flow-box db"><b>Query DB</b><span class="sub">then write it back into the cache (cache-aside)</span></div>
+          </div>
+        </div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-box decision"><b>④ Found &amp; not expired?</b></div>
+        <div class="flow-split">
+          <div class="flow-branch no"><span class="blabel">NO</span><div class="flow-box"><b>404 Not Found</b></div></div>
+          <div class="flow-branch yes"><span class="blabel">YES</span><div class="flow-box end"><b>⑤ HTTP redirect</b><span class="sub">301 / 302 → Location: longUrl</span></div></div>
+        </div>
+      </div>
+      <div class="callout key"><span class="ct">Cache-aside, the pattern to name</span><p>On a miss we read the DB <i>and populate the cache</i> so the next click is a hit. Because clicks follow the <b>80/20 rule</b> (a few links go viral, most are dormant), a relatively small cache absorbs the overwhelming majority of the 116k reads/sec. <b>The cache is what makes the read path survive.</b></p></div>
+
+      <h3>301 vs 302 — a classic gotcha they love</h3>
+      <table class="tbl">
+        <tr><th></th><th>301 Permanent</th><th>302 Temporary</th></tr>
+        <tr><td>Browser behavior</td><td>Caches the redirect; future clicks may skip your server entirely</td><td>Always comes back to your server</td></tr>
+        <tr><td>Server load</td><td><b>Lower</b> (browser remembers)</td><td>Higher (every click hits you)</td></tr>
+        <tr><td>Analytics</td><td><b>Bad</b> — you miss cached clicks</td><td><b>Good</b> — you see every click</td></tr>
+        <tr><td>Use when</td><td>You don't need per-click analytics</td><td>You want to count every click</td></tr>
+      </table>
+      <div class="callout why"><span class="ct">The senior answer</span><p><i>"I'd use <b>302</b> if click analytics matter — every visit hits our server so we can count it. If we care more about offloading traffic and don't need exact counts, <b>301</b> lets browsers cache the redirect and cuts our load. It's an analytics-vs-load tradeoff."</i></p></div>
+    </section>
+
+    <!-- ════════════ SCALING ════════════ -->
+    <section id="architecture" data-group="Scaling">
+      <div class="sec-head"><div><div class="sec-kicker">Putting it together</div><h2>The full architecture</h2></div></div>
+      <p>Now assemble the pieces into the diagram you'd draw on the whiteboard.</p>
+<pre class="ascii">                         ┌─────────────┐
+        Users ──────────▶│ Load Balancer│
+                         └──────┬───────┘
+                ┌───────────────┼───────────────┐
+                ▼               ▼               ▼
+          ┌──────────┐    ┌──────────┐    ┌──────────┐     each app server
+          │App Server│    │App Server│    │App Server│ ◀── holds a block of IDs
+          └────┬─────┘    └────┬─────┘    └────┬─────┘     (stateless otherwise)
+               └───────────────┼───────────────┘
+                       ┌────────┴────────┐
+                       ▼                 ▼
+               ┌───────────────┐  ┌──────────────────┐
+               │  Cache (Redis)│  │   Database        │
+               │  hot mappings │  │  (sharded KV/NoSQL│
+               │  cache-aside  │  │   + replicas)     │
+               └───────────────┘  └──────────────────┘
+                       ▲
+              ┌────────┴─────────┐
+              │ ID / Key service │  hands ID blocks to app servers
+              └──────────────────┘</pre>
+      <p>Every component maps to a pressure we identified: <b>LB + stateless app servers</b> = horizontal scale; <b>cache</b> = read latency; <b>sharded DB + replicas</b> = storage + read throughput; <b>ID service</b> = unique codes without contention.</p>
+    </section>
+
+    <section id="caching" data-group="Scaling">
+      <div class="sec-head"><div><div class="sec-kicker">Scaling</div><h2>Caching — the read-scale lever</h2></div></div>
+      <p>The redirect path is 100× the writes, so caching isn't optional — it's the primary defense.</p>
+      <ul>
+        <li><b>What to cache:</b> <code>short_code → long_url</code>. Small, simple, immutable once created (mappings rarely change), so caching is safe and effective.</li>
+        <li><b>Pattern:</b> cache-aside (lazy) — on miss, read DB, populate cache.</li>
+        <li><b>Eviction:</b> <b>LRU</b> — keep the hottest links in memory, drop the cold ones. Fits the 80/20 click distribution perfectly.</li>
+        <li><b>TTL:</b> optional; mappings are stable so you can cache aggressively. Set TTL to bound memory and respect expiry.</li>
+        <li><b>Where:</b> a Redis/Memcached tier; plus a CDN/edge cache can serve very hot redirects close to users.</li>
+      </ul>
+      <div class="callout info"><span class="ct">Tie-back to Argus</span><p>This is the exact <b>cache-aside + LRU</b> pattern from your fundamentals page — and conceptually the same as RTK Query caching responses on your frontend. Mappings being immutable is what makes the cache so easy here: <b>no invalidation problem</b>, the hardest part of caching, mostly disappears.</p></div>
+    </section>
+
+    <section id="scaling" data-group="Scaling">
+      <div class="sec-head"><div><div class="sec-kicker">Scaling</div><h2>Scaling the database: replication & sharding</h2></div></div>
+      <h4>Replication (for read throughput + availability)</h4>
+      <p>Run a primary for writes and multiple <b>read replicas</b>. Redirects (reads) hit replicas; shortens (writes) hit the primary. Replicas also give failover. Watch for <b>replication lag</b> — but mappings are immutable, so a slightly-stale replica is basically harmless here (a brand-new link <i>might</i> 404 for a few ms before it propagates — acceptable, or route fresh reads to primary briefly).</p>
+      <h4>Sharding (for storage — we have 91 TB)</h4>
+      <p>No single machine holds 91 TB / 100B+ rows, so partition the data across shards. The question is <b>the shard key</b>:</p>
+      <table class="tbl">
+        <tr><th>Strategy</th><th>How</th><th>Verdict</th></tr>
+        <tr><td><b>Hash of short_code</b> <span class="pill acc">good</span></td><td><code>shard = hash(shortCode) % N</code></td><td>Even distribution; a lookup goes straight to the right shard (we always know the code). The natural fit.</td></tr>
+        <tr><td>Range-based</td><td>codes A–M on shard 1, N–Z on shard 2…</td><td>Risks hotspots if creation isn't uniform.</td></tr>
+      </table>
+      <div class="callout why"><span class="ct">Why hash-by-short_code just works</span><p>Every read is "look up <i>this exact code</i>." Hashing the code to pick the shard means the redirect path computes the shard in O(1) and hits exactly one machine — no scatter-gather. The lookup key and the shard key are the same thing, which is the ideal sharding scenario.</p></div>
+      <div class="callout gotcha"><span class="ct">The resharding trap — mention consistent hashing</span><p>Plain <code>% N</code> means adding a shard remaps almost everything. <b>Consistent hashing</b> moves only a small fraction of keys when N changes — the standard fix. Naming this when discussing sharding is a strong signal.</p></div>
+    </section>
+
+    <!-- ════════════ DEEP DIVES ════════════ -->
+    <section id="followups" data-group="Deep Dives">
+      <div class="sec-head"><div><div class="sec-kicker">Follow-ups</div><h2>The deep-dive questions they'll tack on</h2></div></div>
+      <p class="lead">Once the core is solid, interviewers pick one of these to go deeper. Have a one-paragraph answer for each.</p>
+
+      <h4>Custom aliases</h4>
+      <p>User wants <code>short.ly/my-brand</code>. On write, check if the alias exists (it must be unique); if free, store it like any code; if taken, return <code>409</code>. Custom aliases live in the same table — they're just codes you didn't auto-generate.</p>
+
+      <h4>Collisions (if using hashing)</h4>
+      <p>Two URLs hash to the same code. On insert, detect the conflict (unique constraint), then <b>re-hash with a salt</b> or append random chars and retry. The counter approach sidesteps this entirely — worth restating as the reason you preferred it.</p>
+
+      <h4>Link expiry & cleanup</h4>
+      <p>Store <code>expires_at</code>; the read path checks it and returns 404 if past. Reclaim space with a <b>background job</b> (lazy deletion) or a TTL index in the DB — don't delete synchronously on the hot path.</p>
+
+      <h4>Analytics (click counts)</h4>
+      <p>Don't increment a counter in the DB on every redirect — that's a write on the hottest path and will melt. Instead <b>fire an event</b> (to Kafka / a queue) asynchronously and aggregate offline. The redirect returns immediately; analytics are eventually consistent. This is a great place to show you protect the hot path.</p>
+
+      <h4>Rate limiting & abuse</h4>
+      <p>Limit shortens per user/IP (token bucket) to stop spam. Screen long URLs against a malware/phishing blocklist before storing — a shortener is a juicy tool for hiding malicious links.</p>
+
+      <h4>High availability</h4>
+      <p>No single points of failure: multiple app servers behind the LB, replicated cache, replicated + sharded DB, replicated ID service. The redirect path degrades gracefully — even if writes are down, existing links must keep resolving.</p>
+    </section>
+
+    <!-- ════════════ RECAP ════════════ -->
+    <section id="recap" data-group="Recap">
+      <div class="sec-head"><div><div class="sec-kicker">Recap</div><h2>How to present this in 5 minutes</h2></div></div>
+      <p class="lead">The order to walk through it live, so you never blank:</p>
+      <ol class="steps">
+        <li><b>Frame it:</b> "It's a distributed key-value store, <code>code → URL</code>, read-heavy, reads must be fast."</li>
+        <li><b>Clarify:</b> ask scale, read:write, expiry, custom aliases, analytics.</li>
+        <li><b>Estimate:</b> derive QPS, storage, and <b>7-char base62 code</b> from the numbers.</li>
+        <li><b>API + model:</b> POST /shorten, GET /{code}; one KV table keyed by code.</li>
+        <li><b>Core problem:</b> code generation → <b>counter + base62</b>, distributed via <b>ID blocks</b>; mention hashing/KGS alternatives + the guessability tradeoff.</li>
+        <li><b>Read path:</b> cache-aside + Redis (LRU), 301-vs-302 tradeoff.</li>
+        <li><b>Scale:</b> stateless app servers + LB, DB replicas + <b>shard by hash(code)</b>, consistent hashing.</li>
+        <li><b>Deep dives:</b> async analytics, expiry job, rate limiting, HA.</li>
+      </ol>
+      <div class="callout key"><span class="ct">The phrases that score</span><p>"read-heavy, 100:1" · "7 base62 characters gives 3.5 trillion codes" · "counter encoded to base62 — unique by construction" · "hand each server a block of IDs to avoid contention" · "cache-aside with LRU, 80/20 click distribution" · "shard by hash of the short code" · "consistent hashing to avoid mass resharding" · "fire analytics async so the hot path stays fast."</p></div>
+    </section>
+
+    <section id="qa" data-group="Recap">
+      <div class="sec-head"><div><div class="sec-kicker">Flashcards</div><h2>Rapid-fire: URL shortener</h2></div></div>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How long should the short code be, and why?</summary><div class="qa-body"><p>7 base62 characters. 62⁷ ≈ 3.5 trillion combinations, comfortably above our ~182B-in-5-years estimate. 62⁶ (~56B) would run out. Base62 = a–z, A–Z, 0–9, all URL-safe.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How do you generate unique codes across many servers?</summary><div class="qa-body"><p>Use a global counter encoded to base62 (unique by construction — no collisions). Distribute it by having a coordinator hand each app server a <b>block</b> of IDs, so servers mint locally with no per-request contention. Alternatives: hashing (needs collision handling), a Key Generation Service (pre-generated keys), or Snowflake-style IDs.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>301 or 302 redirect?</summary><div class="qa-body"><p>302 (temporary) if you want click analytics — every visit hits your server. 301 (permanent) if you want to offload load — browsers cache the redirect and may skip your server, but you lose analytics. It's an analytics-vs-load tradeoff.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How do you handle 116k reads/sec?</summary><div class="qa-body"><p>Cache-aside with Redis (LRU eviction) absorbs most reads — clicks follow an 80/20 distribution, so a modest cache yields high hit rates. Behind it, read replicas spread DB load and a CDN can serve very hot redirects at the edge. Mappings are immutable, so caching is safe with no invalidation headache.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How do you shard the database?</summary><div class="qa-body"><p>Shard by <code>hash(short_code)</code>. Since every lookup is by exact code, hashing the code picks the shard in O(1) and hits exactly one machine — the lookup key is the shard key. Use consistent hashing so adding shards remaps only a small fraction of keys.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How do you count clicks without melting the hot path?</summary><div class="qa-body"><p>Don't write to the DB on each redirect. Emit an async event to a queue/stream (e.g. Kafka) and aggregate offline. The redirect returns immediately; analytics are eventually consistent. Protecting the hot path from synchronous writes is the key idea.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>SQL or NoSQL?</summary><div class="qa-body"><p>NoSQL key-value/wide-column (DynamoDB, Cassandra) fits best: the access pattern is a single-key lookup at extreme scale with no joins, and it shards naturally. SQL with sharding is a fine v1, but scales out less gracefully.</p></div></details>
+
+      <p class="footer-note">Master this and you can adapt the same skeleton — clarify → estimate → API/model → core algorithm → read path → scale → deep dives — to pastebin, a news feed, a rate limiter, and most others. <a href="index.html">← Back to Argus Prep</a></p>
+    </section>
+
+    <div class="no-results" id="noResults">No topics match your filter.</div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
