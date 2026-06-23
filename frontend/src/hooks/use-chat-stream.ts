@@ -57,7 +57,7 @@ export function useChatStream(
   const closeRef = useRef<(() => void) | null>(null);
   const startedRef = useRef<Set<string>>(new Set());
 
-  const items = useMemo(() => data?.items ?? [], [data]);
+  const items = data?.items ?? [];
 
   const beginStream = useCallback(
     (messageId: string, sinceSeq: number) => {
