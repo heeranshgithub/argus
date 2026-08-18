@@ -11,6 +11,7 @@ sources it used. Built on Next.js + FastAPI + LangGraph + MongoDB.
 ## Live demo
 
 **Deployed app:** [https://main.dnpq3ypn7esgf.amplifyapp.com](https://main.dnpq3ypn7esgf.amplifyapp.com)
+**Deployed API:** [https://jm2ww2chzf.ap-south-1.awsapprunner.com](https://jm2ww2chzf.ap-south-1.awsapprunner.com/api/health)
 
 The flow end-to-end: **New session → Run → live Progress → Report → Chat.**
 
@@ -154,6 +155,45 @@ uv run ruff check . && uv run mypy app && uv run pytest
 cd frontend
 pnpm lint && pnpm typecheck && pnpm build
 ```
+
+---
+
+## Deployment
+
+The frontend runs on **AWS Amplify**; the backend runs on **AWS App Runner** as a
+container, both in `ap-south-1`.
+
+**Configuration.** The backend holds no secrets in its image. A single Secrets
+Manager entry, `argus-backend/config`, stores a flat JSON object of
+`ENV_VAR -> value`; App Runner passes its ARN as `AWS_SECRETS_ID`, and
+`app/aws_secrets.py` merges it into the environment at startup before `Settings`
+is built. Existing environment variables are left untouched, so an App Runner
+runtime variable still overrides the stored value for one-off changes. Locally
+`AWS_SECRETS_ID` is unset and the loader is a no-op — `backend/.env` is read as
+usual.
+
+To change a setting in production, update the secret and redeploy:
+
+```bash
+aws secretsmanager put-secret-value \
+  --secret-id argus-backend/config --region ap-south-1 \
+  --secret-string file://config.json
+```
+
+**Releasing a new backend build.** App Runner watches the `:latest` tag and
+redeploys automatically when a new image lands:
+
+```bash
+REG=325899476773.dkr.ecr.ap-south-1.amazonaws.com
+aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin $REG
+docker build --platform linux/amd64 \
+  -t $REG/argus-backend:$(git rev-parse --short HEAD) \
+  -t $REG/argus-backend:latest backend/
+docker push --all-tags $REG/argus-backend
+```
+
+Every build is also tagged with its commit SHA, so a rollback is repointing the
+service at the previous tag rather than rebuilding.
 
 ---
 
