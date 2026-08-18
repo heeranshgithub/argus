@@ -6,8 +6,8 @@ import { Button } from "@/components/ui/button";
 
 export default function SessionsPage() {
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-12">
-      <div className="mb-8 flex items-end justify-between gap-4">
+    <main className="mx-auto w-full max-w-6xl flex-1 px-6 pt-6 pb-12">
+      <div className="mb-6 flex items-end justify-between gap-4">
         <div className="flex flex-col gap-1.5">
           <h1 className="font-display text-4xl font-extrabold tracking-tight">
             Sessions
