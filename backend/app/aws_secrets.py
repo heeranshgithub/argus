@@ -25,6 +25,25 @@ class SecretsLoadError(RuntimeError):
     """Raised when a requested secret cannot be fetched or parsed."""
 
 
+def _resolve_region(secret_id: str) -> str | None:
+    """Determine the region for the Secrets Manager client.
+
+    boto3 needs an explicit region to build an endpoint and does *not* infer one
+    from an ARN passed as ``SecretId``. Whether a given runtime exports
+    ``AWS_REGION`` into the container is not something we want to depend on, so
+    when a full ARN is configured we read the region straight out of it. Falls
+    back to the standard env vars, then to ``None`` (letting boto3's own config
+    chain decide) for a bare secret name.
+
+    ARN shape: ``arn:aws:secretsmanager:<region>:<account>:secret:<name>``.
+    """
+    if secret_id.startswith("arn:"):
+        parts = secret_id.split(":")
+        if len(parts) > 3 and parts[3]:
+            return parts[3]
+    return os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+
+
 def load_aws_secrets(*, override: bool = False) -> list[str]:
     """Merge the JSON secret named by ``AWS_SECRETS_ID`` into ``os.environ``.
 
@@ -57,9 +76,7 @@ def load_aws_secrets(*, override: bool = False) -> list[str]:
             f"{SECRETS_ID_VAR} is set but boto3 is not installed"
         ) from exc
 
-    # Region: App Runner injects AWS_REGION; AWS_DEFAULT_REGION is the CLI
-    # convention. A full ARN also carries its region, which boto3 honours.
-    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+    region = _resolve_region(secret_id)
     client = boto3.client("secretsmanager", region_name=region)
 
     try:

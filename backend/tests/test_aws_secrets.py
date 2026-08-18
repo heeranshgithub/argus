@@ -152,3 +152,36 @@ def test_fetch_failure_raises(monkeypatch: pytest.MonkeyPatch, fake_boto3) -> No
 
     with pytest.raises(SecretsLoadError, match="could not fetch secret"):
         load_aws_secrets()
+
+
+@pytest.mark.parametrize(
+    ("secret_id", "env_region", "expected"),
+    [
+        # A full ARN is authoritative — it wins even over a conflicting env var,
+        # since the secret only exists in the region named in its own ARN.
+        ("arn:aws:secretsmanager:ap-south-1:1234:secret:argus/config-AbCdEf", None, "ap-south-1"),
+        (
+            "arn:aws:secretsmanager:eu-west-1:1234:secret:argus/config-AbCdEf",
+            "us-east-1",
+            "eu-west-1",
+        ),
+        # A bare name has no region, so fall back to the environment.
+        ("argus-backend/config", "us-east-1", "us-east-1"),
+        ("argus-backend/config", None, None),
+    ],
+)
+def test_region_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+    secret_id: str,
+    env_region: str | None,
+    expected: str | None,
+) -> None:
+    from app.aws_secrets import _resolve_region
+
+    monkeypatch.delenv("AWS_DEFAULT_REGION", raising=False)
+    if env_region is None:
+        monkeypatch.delenv("AWS_REGION", raising=False)
+    else:
+        monkeypatch.setenv("AWS_REGION", env_region)
+
+    assert _resolve_region(secret_id) == expected
