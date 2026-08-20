@@ -55,3 +55,54 @@ jobs:
         run: pnpm build
         env:
           NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+
+  deploy-backend:
+    name: Deploy backend (ECR → App Runner)
+    # Only after both suites are green, and only for pushes to main. The IAM
+    # role's trust policy already pins the branch, so a pull request physically
+    # cannot assume it — this guard just avoids a confusing red job on PRs.
+    needs: [backend, frontend]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      # `id-token: write` lets the runner mint the OIDC JWT it trades for
+      # temporary AWS credentials. No long-lived AWS keys exist in this repo.
+      id-token: write
+      contents: read
+    env:
+      AWS_REGION: ap-south-1
+      ECR_REPOSITORY: argus-backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assume AWS role via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::325899476773:role/GitHubActionsArgusECRPush
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: gha-argus-${{ github.run_id }}
+
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          platforms: linux/amd64
+          push: true
+          # Tagged with the commit SHA as well as `latest`, so a rollback is
+          # repointing the service at an earlier tag rather than a rebuild.
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          # Reuse the previous image's layers so only the changed `COPY app/`
+          # layer is rebuilt; the uv dependency layer is usually a cache hit.
+          cache-from: type=registry,ref=${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          cache-to: type=inline
+
+      - name: Summary
+        run: |
+          echo "Pushed \`${{ github.sha }}\` and \`latest\` to ECR." >> $GITHUB_STEP_SUMMARY
+          echo "App Runner auto-deploys on the new \`latest\`; no further action needed." >> $GITHUB_STEP_SUMMARY
