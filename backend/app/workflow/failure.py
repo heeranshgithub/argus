@@ -76,8 +76,8 @@ def classify(exc: Exception) -> Failure:
             code="llm_auth_failed",
             message=(
                 "We couldn't authenticate with the research service. "
-                "This is a configuration problem on our side — retrying won't "
-                "help until it's fixed."
+                "This is a configuration problem on our side, and retrying "
+                "won't help until it's fixed."
             ),
             retryable=False,
         )
@@ -95,7 +95,7 @@ def classify(exc: Exception) -> Failure:
             code="llm_unavailable",
             message=(
                 "The research service is temporarily unavailable. "
-                "This usually clears up on its own — try again shortly."
+                "This usually clears up on its own, so try again shortly."
             ),
             retryable=True,
         )

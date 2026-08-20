@@ -24,7 +24,7 @@ const archivo = Archivo({
 });
 
 export const metadata: Metadata = {
-  title: "Argus — AI Research Copilot",
+  title: "Argus | AI Research Copilot",
   description: "Research a company and generate a structured meeting briefing.",
 };
 
