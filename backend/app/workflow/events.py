@@ -258,14 +258,28 @@ async def emit_node(node: str) -> AsyncIterator[NodeEmitter]:
     try:
         yield emitter
     except Exception as exc:
+        # Events are persisted *and* streamed to the browser, so the payload
+        # carries only the sanitized code — never the provider's text or a
+        # traceback. The run-level failure card explains what went wrong; a node
+        # only needs to say that it was the one that broke. Full detail goes to
+        # the log line below, which is the operator's channel.
+        #
+        # Imported here rather than at module scope: app.workflow.failure imports
+        # CostCapExceeded from this module.
+        from app.workflow.failure import classify
+
+        failure = classify(exc)
+        get_logger("workflow.node").error(
+            "node_errored",
+            node=node,
+            code=failure.code,
+            detail=f"{type(exc).__name__}: {exc}",
+            traceback=traceback_mod.format_exc(limit=8),
+        )
         await emit(
             EventKind.NODE_ERRORED,
             node=node,
-            payload={
-                "error": str(exc),
-                "type": type(exc).__name__,
-                "traceback": traceback_mod.format_exc(limit=8),
-            },
+            payload={"code": failure.code},
             node_status=NodeStatus.FAILED,
         )
         raise

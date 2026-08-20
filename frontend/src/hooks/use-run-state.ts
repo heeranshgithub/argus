@@ -185,11 +185,13 @@ function applyNodeEvent(
     case "node_errored":
       nv.status = "failed";
       nv.finishedAt = ts;
+      // The payload carries only a sanitized code now — the raw provider text
+      // and traceback never leave the server. The node card shows a Failed
+      // badge; the run-level card carries the explanation, so this error is
+      // held for branching rather than display.
       nv.error = {
-        code: String(payload.type ?? "node_error"),
-        message: String(payload.error ?? "This step failed."),
-        traceback:
-          typeof payload.traceback === "string" ? payload.traceback : null,
+        code: String(payload.code ?? "node_error"),
+        message: "This step failed.",
       };
       break;
   }

@@ -58,11 +58,26 @@ class EventKind(StrEnum):
 
 
 class WorkflowError(ApiModel):
-    """A captured run-level failure."""
+    """A run-level failure, as shown to the client.
+
+    Only sanitized fields live here. The raw exception text and traceback are
+    deliberately absent: this model is serialized straight to the browser over a
+    public endpoint, and provider error strings both mislead users and disclose
+    internal infrastructure. They are logged, and persisted alongside the run
+    under a key no API model reads, so operators keep full fidelity.
+
+    Dropping ``traceback`` from this model also retires it from *existing*
+    records — pydantic ignores the unknown key when reading older documents, so
+    previously stored tracebacks stop being served without any data migration.
+
+    ``code`` is a stable slug for the frontend to branch on (which actions to
+    offer), not a string to display; ``retryable`` says whether running the same
+    thing again could plausibly succeed.
+    """
 
     code: str
     message: str
-    traceback: str | None = None
+    retryable: bool = True
 
 
 class WorkflowEventOut(ApiModel):

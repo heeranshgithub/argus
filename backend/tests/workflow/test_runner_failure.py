@@ -3,12 +3,16 @@
 A run that fails must always reach a terminal state. The failure handler is the
 only thing standing between a crashed run and a session stuck on ``running``
 forever, so it has to survive whatever the exception hands it.
+
+What the resulting error *says* is covered in ``test_failure_classification``;
+this file guards the weaker but more critical property — that building it can
+never raise.
 """
 
 import pytest
 
 from app.models.workflow import WorkflowError
-from app.workflow.runner import _error_from
+from app.workflow.runner import _detail_from, _error_from
 
 
 class _IntCodeError(Exception):
@@ -24,41 +28,24 @@ class _IntCodeError(Exception):
         self.code = code
 
 
-def test_int_code_is_coerced_not_raised() -> None:
+def test_int_code_does_not_raise() -> None:
+    """The original bug: an int ``code`` crashed the failure handler."""
     err = _error_from(_IntCodeError("Error code: 401 - User not found.", 401))
     assert isinstance(err, WorkflowError)
-    assert err.code == "401"
-    assert "User not found" in err.message
+    assert isinstance(err.code, str)
 
 
 @pytest.mark.parametrize(
-    ("code", "expected"),
-    [
-        (401, "401"),
-        ("cost_cap_exceeded", "cost_cap_exceeded"),
-        (None, "_IntCodeError"),  # absent -> class name
-        ("", "_IntCodeError"),  # empty -> class name
-        ("   ", "_IntCodeError"),  # whitespace-only -> class name
-        (503.0, "503.0"),
-        (True, "True"),
-    ],
+    "code",
+    [401, "cost_cap_exceeded", None, "", "   ", 503.0, True, object(), b"\xff"],
 )
-def test_code_coercion_matrix(code: object, expected: str) -> None:
-    assert _error_from(_IntCodeError("boom", code)).code == expected
+def test_never_raises_on_any_code(code: object) -> None:
+    err = _error_from(_IntCodeError("boom", code))
+    assert isinstance(err.code, str) and err.code
+    assert isinstance(err.message, str) and err.message
 
 
-def test_plain_exception_uses_class_name() -> None:
-    err = _error_from(RuntimeError("something broke"))
-    assert err.code == "RuntimeError"
-    assert err.message == "something broke"
-
-
-def test_empty_message_falls_back_to_class_name() -> None:
-    # str(exc) is "" for a bare raise; the UI needs *something* to render.
-    assert _error_from(RuntimeError()).message == "RuntimeError"
-
-
-def test_error_from_never_raises_on_hostile_code() -> None:
+def test_never_raises_on_hostile_code() -> None:
     """A ``code`` whose __str__ explodes must not take the failure handler down."""
 
     class Hostile:
@@ -66,11 +53,10 @@ def test_error_from_never_raises_on_hostile_code() -> None:
             raise ValueError("nope")
 
     err = _error_from(_IntCodeError("boom", Hostile()))
-    assert err.code == "_IntCodeError"  # unusable code -> class name
-    assert err.message == "boom"
+    assert isinstance(err.code, str) and err.code
 
 
-def test_error_from_never_raises_on_hostile_message() -> None:
+def test_never_raises_on_hostile_message() -> None:
     """Likewise for an exception whose own __str__ explodes."""
 
     class HostileError(Exception):
@@ -78,5 +64,20 @@ def test_error_from_never_raises_on_hostile_message() -> None:
             raise ValueError("nope")
 
     err = _error_from(HostileError())
-    assert err.code == "HostileError"
-    assert err.message == "HostileError"
+    assert isinstance(err.message, str) and err.message
+
+
+def test_detail_never_raises_on_hostile_message() -> None:
+    """Diagnostics are best-effort and must not break the handler either."""
+
+    class HostileError(Exception):
+        def __str__(self) -> str:
+            raise ValueError("nope")
+
+    assert _detail_from(HostileError()) == "HostileError"
+
+
+def test_code_is_never_taken_from_the_exception() -> None:
+    """Codes are our stable slugs, not whatever the provider happened to send."""
+    err = _error_from(_IntCodeError("boom", "provider_specific_nonsense"))
+    assert err.code != "provider_specific_nonsense"

@@ -35,9 +35,12 @@ export type EventKind =
 export type RunStatus = "running" | "completed" | "failed";
 
 export interface WorkflowError {
+  /** Stable slug for branching on (which actions to offer) — never displayed. */
   code: string;
+  /** Sanitized, user-facing sentence. Safe to render as-is. */
   message: string;
-  traceback?: string | null;
+  /** Whether running the same thing again could plausibly succeed. */
+  retryable?: boolean;
 }
 
 export interface WorkflowEvent {

@@ -27,6 +27,7 @@ from app.workflow.events import (
     emit,
     event_bus,
 )
+from app.workflow.failure import classify
 from app.workflow.graph import build_graph
 from app.workflow.tools import llm as llm_tool
 
@@ -39,38 +40,27 @@ log = get_logger("workflow.runner")
 
 
 def _error_from(exc: Exception) -> WorkflowError:
-    """Build a :class:`WorkflowError` that always validates.
+    """Build the sanitized, client-visible :class:`WorkflowError` for ``exc``.
 
-    Prefers an exception's stable ``code`` (e.g. ``cost_cap_exceeded``) over its
-    class name so the UI's failed-run card shows a meaningful reason. Provider
-    SDKs are loose about what ``.code`` holds — the OpenAI client copies it
-    straight from the response body, so an HTTP error arrives with the *integer*
-    ``401``. ``WorkflowError.code`` is a ``str``, so an uncoerced value made this
-    constructor raise inside the failure handler and strand the run as
-    ``running``. Coerce to ``str`` and fall back to the class name when the code
-    is absent or empty.
+    Classification lives in :mod:`app.workflow.failure`; nothing derived from the
+    exception's own text reaches this model. It cannot raise — it is called from
+    the failure handler, and a raise there would strand the run as ``running``,
+    which is the exact bug this path once had.
     """
-    fallback = type(exc).__name__
+    failure = classify(exc)
     return WorkflowError(
-        code=_safe_str(getattr(exc, "code", None)) or fallback,
-        message=_safe_str(exc) or fallback,
-        traceback=traceback_mod.format_exc(limit=12),
+        code=failure.code, message=failure.message, retryable=failure.retryable
     )
 
 
-def _safe_str(value: object) -> str:
-    """``str(value)`` that returns ``""`` instead of raising.
-
-    A third-party exception can carry an object whose ``__str__`` itself throws.
-    Since this feeds the failure handler, a raise here would recreate the very
-    bug it exists to prevent.
-    """
-    if value is None:
-        return ""
+def _detail_from(exc: Exception) -> str:
+    """Raw exception text + traceback, for logs and ``error_detail`` only."""
     try:
-        return str(value).strip()
+        return (
+            f"{type(exc).__name__}: {exc}\n{traceback_mod.format_exc(limit=12)}"
+        )
     except Exception:
-        return ""
+        return type(exc).__name__
 
 
 class WorkflowRunner:
@@ -188,8 +178,11 @@ class WorkflowRunner:
         total or guarded.
         """
         error = _error_from(exc)
+        detail = _detail_from(exc)
         try:
-            await workflow_repo.mark_failed(self.db, run_id, error=error)
+            await workflow_repo.mark_failed(
+                self.db, run_id, error=error, detail=detail
+            )
             await session_repo.update_status(self.db, session_id, SessionStatus.FAILED)
         finally:
             # Even if persistence failed, still tell the log and any live listener
@@ -201,10 +194,12 @@ class WorkflowRunner:
                     node=RUN_NODE,
                     payload={"code": error.code, "message": error.message},
                 )
+            # The raw text lives here and nowhere the client can reach.
             log.error(
                 "run_failed",
                 run_id=run_id,
                 session_id=session_id,
                 code=error.code,
-                error=error.message,
+                retryable=error.retryable,
+                detail=detail,
             )

@@ -125,18 +125,28 @@ async def get_latest_raw_sources(
 
 
 async def mark_failed(
-    db: AsyncIOMotorDatabase, run_id: str, *, error: WorkflowError
+    db: AsyncIOMotorDatabase,
+    run_id: str,
+    *,
+    error: WorkflowError,
+    detail: str | None = None,
 ) -> None:
-    """Mark a run failed, stamping ``finished_at`` and the error detail."""
+    """Mark a run failed, stamping ``finished_at`` and the error.
+
+    ``error`` is the sanitized, client-visible failure. ``detail`` is the raw
+    exception text and traceback; it is stored under ``error_detail``, which no
+    API model reads, so operators keep full diagnostics without the data ever
+    reaching a browser.
+    """
+    update: dict[str, object] = {
+        "status": RunStatus.FAILED.value,
+        "finished_at": _utcnow_ms(),
+        "error": error.model_dump(),
+    }
+    if detail:
+        update["error_detail"] = detail
     await db[WORKFLOW_RUNS].update_one(
-        {"_id": _to_object_id(run_id)},
-        {
-            "$set": {
-                "status": RunStatus.FAILED.value,
-                "finished_at": _utcnow_ms(),
-                "error": error.model_dump(),
-            }
-        },
+        {"_id": _to_object_id(run_id)}, {"$set": update}
     )
 
 
