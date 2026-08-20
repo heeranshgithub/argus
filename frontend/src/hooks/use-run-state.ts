@@ -63,8 +63,27 @@ function durationBetween(start?: string, end?: string): number | undefined {
   return Number.isFinite(ms) && ms >= 0 ? ms : undefined;
 }
 
-/** Fold a run's events into a `RunView`. */
-export function deriveRunView(events: readonly WorkflowEvent[]): RunView {
+/** The persisted run record, used as the authority on terminal state. */
+export interface RunSeed {
+  status: RunStatus;
+  startedAt?: string;
+  finishedAt?: string | null;
+  error?: WorkflowError | null;
+}
+
+/** Fold a run's events into a `RunView`.
+ *
+ * `seed` is the persisted run record and outranks the event stream for terminal
+ * state. Events alone are not sufficient: a run can reach `failed` in the
+ * database without a `run_failed` event ever being emitted — that is exactly
+ * what happened when the failure handler itself threw — and a view derived only
+ * from events would then show "Researching…" forever. Node progress still comes
+ * from events; only the overall verdict is seeded.
+ */
+export function deriveRunView(
+  events: readonly WorkflowEvent[],
+  seed?: RunSeed,
+): RunView {
   const view: RunView = {
     nodes: emptyNodes(),
     overall: { status: "running" },
@@ -72,6 +91,13 @@ export function deriveRunView(events: readonly WorkflowEvent[]): RunView {
     error: null,
     lastSeq: 0,
   };
+
+  if (seed) {
+    view.overall.status = seed.status;
+    view.overall.startedAt = seed.startedAt;
+    if (seed.finishedAt) view.overall.finishedAt = seed.finishedAt;
+    if (seed.error) view.error = seed.error;
+  }
 
   const ordered = [...events].sort((a, b) => a.seq - b.seq);
 
@@ -105,8 +131,24 @@ export function deriveRunView(events: readonly WorkflowEvent[]): RunView {
     view.overall.startedAt,
     view.overall.finishedAt,
   );
-  view.activeNode =
-    NODE_ORDER.find((name) => view.nodes[name].status === "running") ?? null;
+
+  if (view.overall.status === "running") {
+    view.activeNode =
+      NODE_ORDER.find((name) => view.nodes[name].status === "running") ?? null;
+  } else {
+    // The run is over, so nothing is in flight. A node can be left `running`
+    // when the run ended without its `node_finished` event (a crash mid-node,
+    // or a terminal state known only from the seed); leaving it that way spins
+    // a progress indicator forever.
+    view.activeNode = null;
+    for (const name of NODE_ORDER) {
+      if (view.nodes[name].status === "running") {
+        view.nodes[name].status =
+          view.overall.status === "failed" ? "failed" : "done";
+        view.nodes[name].finishedAt ??= view.overall.finishedAt;
+      }
+    }
+  }
 
   return view;
 }

@@ -11,7 +11,11 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 
 import { env } from "@/lib/env";
 import { openEventStream } from "@/lib/sse";
-import { deriveRunView, type RunView } from "@/hooks/use-run-state";
+import {
+  deriveRunView,
+  type RunSeed,
+  type RunView,
+} from "@/hooks/use-run-state";
 import { runsApi, useGetRunQuery } from "@/services/runs";
 import { useAppDispatch } from "@/store/hooks";
 import type { WorkflowEvent } from "@/types/workflow";
@@ -94,7 +98,25 @@ export function useRunStream(
     () => [...state.bySeq.values()].sort((a, b) => a.seq - b.seq),
     [state.bySeq],
   );
-  const view = useMemo(() => deriveRunView(events), [events]);
+  // The persisted record outranks the event stream for terminal state: a run can
+  // be `failed` in the database with no `run_failed` event ever emitted, and a
+  // view built from events alone would show it as still running forever.
+  const runSeed = useMemo<RunSeed | undefined>(
+    () =>
+      seed && seed.id === runId
+        ? {
+            status: seed.status,
+            startedAt: seed.startedAt,
+            finishedAt: seed.finishedAt,
+            error: seed.error,
+          }
+        : undefined,
+    [seed, runId],
+  );
+  const view = useMemo(
+    () => deriveRunView(events, runSeed),
+    [events, runSeed],
+  );
 
   // Mirror the latest seq into a ref (in an effect, never during render) so the
   // stream can open at the right resume point without depending on every tick.
