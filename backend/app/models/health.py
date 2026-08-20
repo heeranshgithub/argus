@@ -12,9 +12,10 @@ class HealthResponse(ApiModel):
 
     status: Literal["ok", "down"]
     mongo: Literal["ok", "down"]
-    # OpenRouter reachability (HEAD on the API base, cached); ``unknown`` when no
-    # key is configured or the probe hasn't run (PLAN_PART_5 §2.1).
-    openrouter: Literal["ok", "down", "unknown"] = "unknown"
+    # OpenRouter credential check (authenticated GET on /key, cached);
+    # ``unauthorized`` when the gateway rejects the key, ``unknown`` when no key
+    # is configured or the probe hasn't run (PLAN_PART_5 §2.1).
+    openrouter: Literal["ok", "unauthorized", "down", "unknown"] = "unknown"
     version: str
 
 
