@@ -79,11 +79,16 @@ class Settings(BaseSettings):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def cors_origins(self) -> list[str]:
-        """Parse comma-separated CORS origins from the environment."""
+        """Parse comma-separated CORS origins from the environment.
+
+        Trailing slashes are stripped: browsers send a bare scheme://host[:port]
+        in the ``Origin`` header and Starlette matches it exactly, so a
+        configured ``https://example.com/`` would silently reject every request.
+        """
         return [
-            origin.strip()
+            origin.strip().rstrip("/")
             for origin in self.cors_origins_raw.split(",")
-            if origin.strip()
+            if origin.strip().rstrip("/")
         ]
 
     @computed_field  # type: ignore[prop-decorator]

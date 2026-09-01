@@ -1,4 +1,4 @@
-import { ArrowRight, MoveDown } from "lucide-react";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 
 import { HealthCard } from "@/components/health-card";
@@ -10,20 +10,27 @@ export default function Home() {
       {/* Oversized brand mark, echoing the slash in the wordmark. Decorative. */}
       <div
         aria-hidden
-        className="pointer-events-none absolute -left-24 top-10 -z-10 select-none font-display text-[28rem] font-black leading-none text-primary/[0.06] sm:-left-16 dark:text-primary/[0.08]"
+        className="pointer-events-none absolute -left-24 top-2 -z-10 select-none font-display text-[28rem] font-black leading-none text-primary/[0.06] sm:-left-16 dark:text-primary/[0.08]"
       >
         /
       </div>
 
-      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-12 px-6 py-20 lg:grid-cols-[1.15fr_0.85fr] lg:py-28">
+      {/*
+        The hero occupies exactly the viewport minus the 65px sticky nav (h-16 +
+        1px border), so it always fills the screen without scrolling it. Content
+        is vertically centred in that box, and the `max-height` variants trim the
+        display type and rhythm on short laptop panels — those screens are wide
+        but short, so width breakpoints would fire `lg:` and overflow instead.
+      */}
+      <div className="mx-auto grid w-full max-w-6xl grid-cols-1 items-center gap-12 px-6 pt-8 pb-20 lg:min-h-[calc(100svh-65px)] lg:grid-cols-[1.15fr_0.85fr] lg:pt-8 lg:pb-16 [@media(max-height:700px)]:lg:pt-4 [@media(max-height:700px)]:lg:pb-8">
         {/* Left: the pitch. */}
-        <div className="flex flex-col items-start gap-7">
+        <div className="flex flex-col items-start gap-7 [@media(max-height:700px)]:gap-5">
           <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-accent/60 px-3.5 py-1.5 text-xs font-semibold uppercase tracking-widest text-accent-foreground">
             <span className="block h-3 w-1.5 -skew-x-12 bg-primary" />
             AI research copilot for B2B meetings
           </span>
 
-          <h1 className="font-display text-5xl font-extrabold leading-[0.95] tracking-tight sm:text-6xl lg:text-7xl">
+          <h1 className="font-display text-5xl font-extrabold leading-[0.95] tracking-tight sm:text-6xl lg:text-7xl [@media(max-height:700px)]:lg:text-6xl">
             Walk in already
             <br />
             <span className="text-primary">knowing everything.</span>
@@ -46,7 +53,7 @@ export default function Home() {
             <Button asChild variant="ghost" size="lg" className="text-primary">
               <Link href="/sessions">
                 Browse sessions
-                <MoveDown className="size-4" />
+                <ArrowUpRight className="size-4" />
               </Link>
             </Button>
           </div>

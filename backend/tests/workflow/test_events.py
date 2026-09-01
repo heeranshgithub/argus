@@ -57,7 +57,11 @@ async def test_emit_node_records_error_and_reraises() -> None:
     assert EventKind.NODE_ERRORED in kinds
     assert run.node_status["analyst"] is NodeStatus.FAILED
     errored = next(e for e in run.events if e.kind is EventKind.NODE_ERRORED)
-    assert errored.payload["error"] == "boom"
+    # Events are streamed to the browser, so the payload carries only the
+    # sanitized code — the raw text and traceback go to the log, not the wire.
+    assert errored.payload == {"code": "workflow_failed"}
+    assert "boom" not in str(errored.payload)
+    assert "traceback" not in errored.payload
 
 
 async def test_event_bus_publishes_to_subscribers() -> None:

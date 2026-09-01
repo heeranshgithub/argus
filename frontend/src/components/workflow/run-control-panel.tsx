@@ -98,12 +98,19 @@ export function RunControlPanel({
   }
 
   if (status === "failed") {
+    // Resume re-runs from the last checkpoint, which only helps if the cause
+    // could pass on a second attempt. For a rejected API key or a tripped cost
+    // cap it cannot, and offering the button promises a recovery that isn't
+    // available. Older runs predate the flag and default to allowing it.
+    const canResume = view.error?.retryable !== false;
     return (
       <RunFailedCard error={view.error}>
-        <Button size="sm" onClick={handleResume} disabled={busy}>
-          <RotateCcw className="size-4" aria-hidden />
-          Resume
-        </Button>
+        {canResume && (
+          <Button size="sm" onClick={handleResume} disabled={busy}>
+            <RotateCcw className="size-4" aria-hidden />
+            Resume
+          </Button>
+        )}
         <Button
           size="sm"
           variant="outline"

@@ -33,7 +33,11 @@ export function WorkflowNodeCard({
   const Icon = meta.icon;
   const running = node.status === "running";
   const failed = node.status === "failed";
-  const hasDetail = node.status !== "pending";
+  // Only offer the disclosure when there is genuinely something behind it. A
+  // node that failed before producing any output has nothing to show now that
+  // raw error text is no longer sent to the client.
+  const hasDetail =
+    node.status !== "pending" && Object.keys(node.output).length > 0;
   const [open, setOpen] = useState(running || failed);
 
   const liveMs = useElapsed(node.startedAt, running);
@@ -109,11 +113,6 @@ export function WorkflowNodeCard({
           {meta.label} {node.status}
         </span>
 
-        {failed && node.error && (
-          <p className="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-            {node.error.message}
-          </p>
-        )}
 
         {hasDetail && (
           <Collapsible open={open} onOpenChange={setOpen} className="mt-3">

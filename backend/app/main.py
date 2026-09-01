@@ -14,6 +14,7 @@ from app.api.errors import register_exception_handlers
 from app.api.rate_limit import configure as configure_rate_limit
 from app.api.rate_limit import limiter, rate_limit_handler
 from app.api.router import api_router
+from app.aws_secrets import load_aws_secrets
 from app.config import Settings, get_settings
 from app.db.mongo import MongoManager, ensure_indexes, mongo_manager
 from app.logging_config import (
@@ -62,7 +63,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     """Build and configure the FastAPI application."""
-    settings = settings or get_settings()
+    if settings is None:
+        # Must precede get_settings(): it is lru_cache'd, so the first call
+        # freezes whatever the environment holds at that moment. Deployments set
+        # AWS_SECRETS_ID; everywhere else this is a no-op and the local .env wins.
+        load_aws_secrets()
+        settings = get_settings()
     configure_logging(settings.log_level, pretty=settings.env == "dev")
 
     app = FastAPI(

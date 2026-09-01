@@ -24,9 +24,6 @@ export function RunFailedCard({
           <p className="text-sm text-destructive/90">
             {error?.message ?? "The workflow stopped unexpectedly."}
           </p>
-          {error?.code && (
-            <p className="text-xs text-destructive/70">Code: {error.code}</p>
-          )}
         </div>
       </div>
       {children && <div className="flex flex-wrap gap-2">{children}</div>}

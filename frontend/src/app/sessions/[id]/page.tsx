@@ -34,7 +34,7 @@ export default function SessionDetailPage() {
   const { data, error, isLoading } = useGetSessionQuery(id, { skip: !id });
 
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-10">
+    <main className="mx-auto w-full max-w-6xl flex-1 px-6 pt-6 pb-10">
       <Link
         href="/sessions"
         className="mb-6 inline-flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"

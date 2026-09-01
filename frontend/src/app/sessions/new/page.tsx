@@ -45,7 +45,7 @@ export default function NewSessionPage() {
         /
       </div>
 
-      <div className="mx-auto w-full max-w-6xl px-6 py-12">
+      <div className="mx-auto w-full max-w-6xl px-6 pt-6 pb-12">
         <Link
           href="/sessions"
           className="mb-8 inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"

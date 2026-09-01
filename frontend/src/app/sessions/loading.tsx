@@ -2,8 +2,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export default function SessionsLoading() {
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-12">
-      <div className="mb-8 flex items-end justify-between">
+    <main className="mx-auto w-full max-w-6xl flex-1 px-6 pt-6 pb-12">
+      <div className="mb-6 flex items-end justify-between">
         <div className="flex flex-col gap-2">
           <Skeleton className="h-10 w-48" />
           <Skeleton className="h-4 w-56" />
