@@ -37,6 +37,7 @@
         <div class="nav-group-title">Backend &amp; system design</div>
         <span class="nav-link active" aria-current="page" style="cursor:default"><span class="dot"></span><span class="lbl">Argus Prep &middot; hub</span></span>
         <a class="nav-link" href="langgraph-workflow.html"><span class="dot"></span><span class="lbl">LangGraph Workflow</span></a>
+        <a class="nav-link" href="researcher-node.html"><span class="dot"></span><span class="lbl">The Researcher Node</span></a>
         <a class="nav-link" href="sse-streaming.html"><span class="dot"></span><span class="lbl">SSE + sinceSeq</span></a>
         <a class="nav-link" href="background-tasks-202.html"><span class="dot"></span><span class="lbl">202 + BackgroundTasks</span></a>
         <a class="nav-link" href="url-shortener.html"><span class="dot"></span><span class="lbl">URL Shortener</span></a>
@@ -217,6 +218,13 @@ _generate: BM25-select sources → build prompt (report + sources + history)
 
       <h4>Failure handling</h4>
       <p>Per-node retry policy (<code>workflow_node_retry_limit</code>) for transient errors; an uncaught node error fails the run with a typed <code>WorkflowError</code>. You also sketched a second conditional edge for the "research dead-end" (zero sources found) that routes to a <i>degraded report</i> instead of crashing — good to mention as "what I'd add next."</p>
+
+      <a href="researcher-node.html" class="page-card">
+        <div class="pc-k">Standalone deep dive &middot; with real code</div>
+        <div class="pc-t">&#128269; Inside the researcher node &rarr;</div>
+        <div class="pc-d">The one node that never calls an LLM, and the only place Argus touches the open web. Search behind a Protocol with a Tavily/DDG swap, a bounded-semaphore fetch, the readability cleaner, why snippet and content are both stored, double de-duplication, and the four-rung ladder that degrades instead of failing the run.</div>
+        <span class="pc-go">Open the walkthrough &rarr;</span>
+      </a>
 
       <a href="langgraph-workflow.html" class="page-card">
         <div class="pc-k">Standalone deep dive · with real code</div>

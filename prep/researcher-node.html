@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>The Researcher Node · Deep Dive</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='11' cy='11' r='7' stroke='%2356d364' stroke-width='2' fill='none'/%3E%3Cpath d='M20 20l-4.3-4.3' stroke='%2356d364' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+<button class="menu-toggle" aria-label="Menu" onclick="document.querySelector('.sidebar').classList.toggle('open')">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+
+<div class="app">
+  <aside class="sidebar">
+    <a href="langgraph-workflow.html#node-anatomy" class="back-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      Back to the workflow graph
+    </a>
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#dffbe4" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4.3-4.3"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">The Researcher</div>
+        <div class="brand-sub">Search &middot; fetch &middot; clean</div>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="search" id="search" placeholder="Filter topics…  (press /)" autocomplete="off" />
+    </div>
+
+    <nav class="nav-pages" style="border-bottom:1px solid var(--border);margin:0 0 12px;padding-bottom:8px">
+      <div class="nav-group">
+        <div class="nav-group-title">Backend &amp; system design</div>
+        <a class="nav-link" href="argus-prep.html"><span class="dot"></span><span class="lbl">Argus Prep &middot; hub</span></a>
+        <a class="nav-link" href="langgraph-workflow.html"><span class="dot"></span><span class="lbl">LangGraph Workflow</span></a>
+        <span class="nav-link active" aria-current="page" style="cursor:default"><span class="dot"></span><span class="lbl">The Researcher Node</span></span>
+        <a class="nav-link" href="sse-streaming.html"><span class="dot"></span><span class="lbl">SSE + sinceSeq</span></a>
+        <a class="nav-link" href="background-tasks-202.html"><span class="dot"></span><span class="lbl">202 + BackgroundTasks</span></a>
+        <a class="nav-link" href="url-shortener.html"><span class="dot"></span><span class="lbl">URL Shortener</span></a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Frontend</div>
+        <a class="nav-link" href="frontend-prep/frontend-prep.html"><span class="dot"></span><span class="lbl">Frontend Prep &middot; hub</span></a>
+        <a class="nav-link" href="frontend-prep/streaming-deep-dive.html"><span class="dot"></span><span class="lbl">Streaming &amp; Optimistic UI</span></a>
+      </div>
+    </nav>
+    <nav id="nav"></nav>
+  </aside>
+
+  <main class="content">
+    <header class="hero">
+      <h1>Inside the <span class="grad">researcher</span> node</h1>
+      <p>The only node in the graph that never calls an LLM. It turns a list of questions into a de-duplicated corpus of cleaned page text &mdash; through a search API it does not control, over a network that fails constantly, under a concurrency budget and a byte cap. This is the node where <b>everything that can go wrong, does</b>, and the design is mostly about degrading instead of dying.</p>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar"><i id="progressFill"></i></div>
+        <div class="progress-label" id="progressLabel">0 of 0 sections reviewed</div>
+      </div>
+      <div class="hero-meta">
+        <span><b>Touches</b> &middot; concurrency &middot; bounded resources &middot; graceful degradation &middot; adapters</span>
+        <span><b>Pattern</b> &middot; protocol + fan-out/fan-in + fallback ladder</span>
+      </div>
+    </header>
+
+    <div class="content-inner" id="sections">
+
+    <!-- ══════════ ORIENT ══════════ -->
+    <section id="why" data-group="Orient">
+      <div class="sec-head"><div><div class="sec-kicker">Start here</div><h2>What this node is actually for</h2></div></div>
+      <p class="lead">Every other node is a prompt with a schema. This one is an I/O pipeline: it is the only place Argus touches the open internet, and the only node whose failures are <b>expected</b> rather than exceptional.</p>
+      <p>Its contract is narrow. In: the sub-questions the planner produced that have not been researched yet. Out: an append to <code>raw_sources</code>, an increment of <code>research_iteration</code>, and a record of which question ids are now done.</p>
+<pre>{
+  <span class="tok-s">"raw_sources"</span>: [...],              <span class="tok-c"># reducer channel — appended, deduped by url</span>
+  <span class="tok-s">"research_iteration"</span>: iteration + <span class="tok-n">1</span>,
+  <span class="tok-s">"researched_question_ids"</span>: [q[<span class="tok-s">"id"</span>] <span class="tok-k">for</span> q <span class="tok-k">in</span> todo],   <span class="tok-c"># also a reducer</span>
+  <span class="tok-s">"errors"</span>: errors,                  <span class="tok-c"># only when non-empty</span>
+}</pre>
+      <div class="callout key"><span class="ct">Why <code>researched_question_ids</code> exists</span><p>It is what makes the research loop <b>cheap</b>. On a second pass the node filters <code>todo</code> to questions it has not seen, so a loop-back only chases the planner&rsquo;s <i>new</i> gap-closing questions instead of re-searching the whole plan. It is also the reason the conditional edge loops back to the <b>planner</b> and not straight to the researcher &mdash; re-entering the researcher with no new questions would produce an empty <code>todo</code> and fetch nothing.</p></div>
+    </section>
+
+    <section id="mental-model" data-group="Orient">
+      <div class="sec-head"><div><div class="sec-kicker">The shape</div><h2>Fan out wide, squeeze through a narrow gate</h2></div></div>
+      <p>Every question is searched in parallel, every search produces several hits, and every hit wants an HTTP request. Left alone that is an unbounded burst against the network. The whole node is shaped by one constraint: <b>a semaphore that lets only four fetches run at once</b>.</p>
+
+      <div class="card" style="padding:20px 16px 12px">
+      <div style="overflow-x:auto">
+      <svg viewBox="0 0 880 470" role="img" style="min-width:700px;width:100%;height:auto;display:block;font-family:var(--mono)"
+           aria-label="Each unresearched question is searched in parallel; the top three hits per question, plus six company-site paths on the first pass, all funnel through a four-slot semaphore before being fetched, cleaned and de-duplicated into raw_sources.">
+        <defs>
+          <marker id="rn-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--text-2)"/>
+          </marker>
+          <marker id="rn-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--gold)"/>
+          </marker>
+          <marker id="rn-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--accent)"/>
+          </marker>
+        </defs>
+
+        <g font-size="10.5" fill="var(--muted)" letter-spacing="0.8">
+          <text x="24" y="42">TODO QUESTIONS</text>
+          <text x="196" y="42">SEARCH &#183; parallel</text>
+          <text x="392" y="42">TOP 3 OF 5</text>
+          <text x="566" y="42">GATE</text>
+          <text x="704" y="42">FETCH &#183; CLEAN</text>
+        </g>
+
+        <!-- question rows -->
+        <g fill="var(--panel-2)" stroke="var(--border-2)" stroke-width="1.3">
+          <rect x="24" y="78" width="120" height="36" rx="8"/>
+          <rect x="24" y="132" width="120" height="36" rx="8"/>
+          <rect x="24" y="186" width="120" height="36" rx="8"/>
+        </g>
+        <g font-size="11.5" fill="var(--text-2)" text-anchor="middle">
+          <text x="84" y="101">q0</text><text x="84" y="155">q1</text><text x="84" y="209">q…</text>
+        </g>
+
+        <g fill="var(--panel-2)" stroke="var(--border-2)" stroke-width="1.3">
+          <rect x="196" y="78" width="140" height="36" rx="8"/>
+          <rect x="196" y="132" width="140" height="36" rx="8"/>
+          <rect x="196" y="186" width="140" height="36" rx="8"/>
+        </g>
+        <g font-size="10.5" fill="var(--text-2)" text-anchor="middle">
+          <text x="266" y="101">search(q, k=5)</text>
+          <text x="266" y="155">search(q, k=5)</text>
+          <text x="266" y="209">search(q, k=5)</text>
+        </g>
+
+        <g fill="var(--panel-2)" stroke="var(--border-2)" stroke-width="1.3">
+          <rect x="392" y="78" width="96" height="36" rx="8"/>
+          <rect x="392" y="132" width="96" height="36" rx="8"/>
+          <rect x="392" y="186" width="96" height="36" rx="8"/>
+        </g>
+        <g font-size="10.5" fill="var(--text-2)" text-anchor="middle">
+          <text x="440" y="101">3 hits</text><text x="440" y="155">3 hits</text><text x="440" y="209">3 hits</text>
+        </g>
+
+        <g stroke="var(--text-2)" stroke-width="1.3" fill="none" marker-end="url(#rn-ar)">
+          <path d="M144 96 L190 96"/><path d="M144 150 L190 150"/><path d="M144 204 L190 204"/>
+          <path d="M336 96 L386 96"/><path d="M336 150 L386 150"/><path d="M336 204 L386 204"/>
+        </g>
+        <text x="352" y="70" font-size="10" fill="var(--rose)">2 of 5 hits dropped, unfetched</text>
+
+        <!-- company site crawl -->
+        <rect x="24" y="300" width="180" height="52" rx="8" fill="var(--panel-2)" stroke="var(--gold)" stroke-width="1.3"/>
+        <text x="114" y="322" font-size="11" fill="var(--gold)" text-anchor="middle">company site</text>
+        <text x="114" y="338" font-size="10" fill="var(--muted)" text-anchor="middle">6 paths &#183; iteration 0 only</text>
+        <text x="24" y="372" font-size="10" fill="var(--muted)">/ &#183; /about &#183; /products &#183; /pricing &#183; /careers &#183; /blog</text>
+
+        <!-- converge into the gate -->
+        <g stroke="var(--text-2)" stroke-width="1.2" fill="none" marker-end="url(#rn-ar)">
+          <path d="M488 96  C 520 96, 528 130, 552 150"/>
+          <path d="M488 150 L552 150"/>
+          <path d="M488 204 C 520 204, 528 172, 552 156"/>
+        </g>
+        <path d="M204 326 C 380 326, 470 250, 552 168" stroke="var(--gold)" stroke-width="1.2" fill="none" marker-end="url(#rn-gold)"/>
+
+        <!-- the semaphore gate -->
+        <rect x="556" y="112" width="92" height="82" rx="8" fill="var(--panel-2)" stroke="var(--accent)" stroke-width="1.6"/>
+        <text x="602" y="138" font-size="11.5" fill="var(--accent)" text-anchor="middle">Semaphore</text>
+        <text x="602" y="156" font-size="16" fill="var(--accent)" text-anchor="middle" font-weight="700">4</text>
+        <text x="602" y="176" font-size="9.5" fill="var(--muted)" text-anchor="middle">concurrent</text>
+        <text x="602" y="188" font-size="9.5" fill="var(--muted)" text-anchor="middle">fetches</text>
+
+        <path d="M648 153 L698 153" stroke="var(--accent)" stroke-width="1.4" fill="none" marker-end="url(#rn-acc)"/>
+
+        <!-- fetch + clean -->
+        <rect x="702" y="106" width="152" height="94" rx="8" fill="var(--panel-2)" stroke="var(--border-2)" stroke-width="1.3"/>
+        <g font-size="10.5" fill="var(--text-2)" text-anchor="middle">
+          <text x="778" y="128">httpx GET</text>
+          <text x="778" y="146">8s timeout &#183; 1 MB cap</text>
+          <text x="778" y="168">clean_html()</text>
+          <text x="778" y="186">&#8594; 8 000 chars</text>
+        </g>
+
+        <!-- down to dedupe -->
+        <path d="M778 200 L778 246" stroke="var(--text-2)" stroke-width="1.3" fill="none" marker-end="url(#rn-ar)"/>
+        <rect x="614" y="250" width="240" height="40" rx="8" fill="var(--panel-2)" stroke="var(--border-2)" stroke-width="1.3"/>
+        <text x="734" y="275" font-size="11" fill="var(--text-2)" text-anchor="middle">dedupe by url (within this pass)</text>
+
+        <path d="M734 290 L734 330" stroke="var(--accent)" stroke-width="1.4" fill="none" marker-end="url(#rn-acc)"/>
+        <rect x="614" y="334" width="240" height="46" rx="8" fill="var(--panel-2)" stroke="var(--accent)" stroke-width="1.5"/>
+        <text x="734" y="355" font-size="11.5" fill="var(--accent)" text-anchor="middle">raw_sources</text>
+        <text x="734" y="371" font-size="9.5" fill="var(--muted)" text-anchor="middle">reducer dedupes again, across iterations</text>
+
+        <line x1="24" y1="418" x2="854" y2="418" stroke="var(--border)"/>
+        <text x="24" y="440" font-size="10.5" fill="var(--muted)">Searches are NOT gated &#8212; one concurrent API call per question. Only fetches queue at the semaphore.</text>
+        <text x="24" y="456" font-size="10.5" fill="var(--muted)">First pass with 4 questions: 4 searches, 12 page fetches + 6 site paths = 18 requests, at most 4 in flight.</text>
+      </svg>
+      </div>
+      <p class="muted" style="font-size:12.5px;margin:10px 2px 0">Two levels of <code>asyncio.gather</code> &mdash; one over questions, one over each question&rsquo;s hits &mdash; feeding a single shared semaphore.</p>
+      </div>
+    </section>
+
+    <!-- ══════════ THE PIPELINE ══════════ -->
+    <section id="search" data-group="The pipeline">
+      <div class="sec-head"><div><div class="sec-kicker">Stage 1</div><h2>Search: a protocol with two implementations</h2></div></div>
+      <p class="lead">The node never imports a search vendor. It depends on a <code>Protocol</code> &mdash; Python&rsquo;s structural typing, closest to a TypeScript <code>interface</code> &mdash; and whatever satisfies it gets injected.</p>
+<pre><span class="tok-f">@runtime_checkable</span>
+<span class="tok-k">class</span> <span class="tok-f">SearchClient</span>(Protocol):
+    <span class="tok-k">async def</span> <span class="tok-f">search</span>(self, query: str, k: int = <span class="tok-n">5</span>) -&gt; list[SearchHit]: ...
+
+<span class="tok-k">class</span> <span class="tok-f">SearchHit</span>(TypedDict):
+    url: str
+    title: str
+    snippet: str</pre>
+      <p>Three things implement it: <code>TavilyClient</code> (primary, an LLM-oriented search API returning clean JSON), <code>DuckDuckGoClient</code> (key-free fallback that POSTs to the HTML endpoint and parses the result list with BeautifulSoup), and <code>FakeSearchClient</code> in the tests. Selection happens once at startup:</p>
+<pre><span class="tok-k">def</span> <span class="tok-f">build_search_client</span>(settings) -&gt; SearchClient:
+    <span class="tok-k">if</span> settings.search_provider == <span class="tok-s">"tavily"</span> <span class="tok-k">and</span> settings.tavily_api_key:
+        <span class="tok-k">return</span> TavilyClient(settings.tavily_api_key)
+    <span class="tok-k">return</span> DuckDuckGoClient(timeout_seconds=settings.fetch_timeout_seconds)</pre>
+      <div class="callout why"><span class="ct">Why a Protocol rather than a base class</span><p>Nothing has to <i>inherit</i> anything. A class is a <code>SearchClient</code> if it has a matching <code>search</code> method &mdash; so the fake in the test suite is not coupled to the real one, and swapping vendors touches one factory function. This is the same dependency-inversion move as <code>WorkflowDeps</code> itself: nodes depend on capabilities, never on concrete clients.</p></div>
+
+      <h3>Retries live in the client, not the node</h3>
+<pre>_search_retry = retry(
+    retry=retry_if_exception_type((httpx.HTTPError, ConnectionError, TimeoutError)),
+    stop=stop_after_attempt(<span class="tok-n">3</span>),
+    wait=wait_exponential(multiplier=<span class="tok-n">1</span>, min=<span class="tok-n">1</span>, max=<span class="tok-n">4</span>),
+    reraise=<span class="tok-n">True</span>,
+)</pre>
+      <p>Both clients wear this <a href="https://github.com/jd/tenacity">tenacity</a> decorator: three attempts, exponential backoff, and only for <b>transport</b> errors &mdash; a malformed response or an auth failure is not retried, because it will not fix itself. <code>reraise=True</code> means the caller sees the original exception rather than tenacity&rsquo;s wrapper, which matters because the node&rsquo;s error record stores <code>str(exc)</code>.</p>
+      <div class="callout gotcha"><span class="ct">Retries nest three deep here</span><p>A single failing search can be attempted <b>3&times;</b> inside the client, and the whole <code>researcher</code> node can be retried <b>2&times;</b> by LangGraph&rsquo;s <code>RetryPolicy</code>. Worst case that is six search calls for one question. Bounded, but worth knowing before you widen either number.</p></div>
+    </section>
+
+    <section id="fetch" data-group="The pipeline">
+      <div class="sec-head"><div><div class="sec-kicker">Stage 2</div><h2>Fetch: three guards around one GET</h2></div></div>
+      <p class="lead">Fetching an arbitrary URL from the open web is the most hostile thing this app does. <code>HttpxFetcher</code> wraps it in three limits.</p>
+<pre><span class="tok-k">async with</span> httpx.AsyncClient(
+    timeout=self._timeout,           <span class="tok-c"># 1. 8 seconds, whole request</span>
+    follow_redirects=<span class="tok-n">True</span>,
+    headers={<span class="tok-s">"User-Agent"</span>: _USER_AGENT, <span class="tok-s">"Accept"</span>: <span class="tok-s">"text/html,*/*"</span>},
+) <span class="tok-k">as</span> client, client.stream(<span class="tok-s">"GET"</span>, url) <span class="tok-k">as</span> resp:   <span class="tok-c"># 2. streamed, not buffered</span>
+    resp.raise_for_status()
+    body = <span class="tok-k">await</span> self._read_capped(resp)                   <span class="tok-c"># 3. stop at 1 MB</span></pre>
+      <ol class="steps">
+        <li><b>Timeout.</b> Eight seconds for the whole request. Without it one slow host stalls a semaphore slot indefinitely and starves every queued fetch behind it.</li>
+        <li><b>Streaming.</b> <code>client.stream</code> rather than a plain <code>get</code>, so bytes arrive in chunks and the cap can be enforced <i>while downloading</i> &mdash; not after a 400 MB response has already landed in memory.</li>
+        <li><b>Byte cap.</b> <code>_read_capped</code> accumulates chunks and <code>break</code>s the moment it crosses 1 MB. Truncating mid-document is fine: the cleaner only wants prose, and 1 MB of HTML is already far more than the 8 000-character budget will keep.</li>
+      </ol>
+      <p>A browser-ish <code>User-Agent</code> is set deliberately &mdash; the default httpx agent gets 403&rsquo;d by a meaningful fraction of sites &mdash; while still identifying the bot honestly.</p>
+
+      <h3>Every failure becomes one exception type</h3>
+<pre><span class="tok-k">except</span> httpx.HTTPStatusError <span class="tok-k">as</span> exc:
+    <span class="tok-k">raise</span> FetchError(url, f<span class="tok-s">"HTTP {exc.response.status_code}"</span>) <span class="tok-k">from</span> exc
+<span class="tok-k">except</span> httpx.HTTPError <span class="tok-k">as</span> exc:
+    <span class="tok-k">raise</span> FetchError(url, type(exc).__name__) <span class="tok-k">from</span> exc</pre>
+      <p>404, connection refused, DNS failure, TLS error, timeout &mdash; all collapse to <code>FetchError</code> carrying the url and a short reason. The caller then needs exactly one <code>except</code> clause to implement &ldquo;skip this URL, keep the pass alive.&rdquo; Narrowing the exception surface at a boundary is what makes the degradation ladder in the next section readable.</p>
+    </section>
+
+    <section id="clean" data-group="The pipeline">
+      <div class="sec-head"><div><div class="sec-kicker">Stage 3</div><h2>Clean: HTML in, prose out</h2></div></div>
+      <p class="lead">Raw HTML is mostly not content. <code>clean_html</code> is a deliberately small readability pass &mdash; no heavyweight dependency, three steps.</p>
+<pre>_NOISE_TAGS = (<span class="tok-s">"script"</span>, <span class="tok-s">"style"</span>, <span class="tok-s">"noscript"</span>, <span class="tok-s">"template"</span>, <span class="tok-s">"svg"</span>,
+               <span class="tok-s">"nav"</span>, <span class="tok-s">"footer"</span>, <span class="tok-s">"header"</span>, <span class="tok-s">"aside"</span>, <span class="tok-s">"form"</span>)
+
+soup = BeautifulSoup(html, <span class="tok-s">"html.parser"</span>)
+<span class="tok-k">for</span> tag <span class="tok-k">in</span> soup(list(_NOISE_TAGS)):
+    tag.decompose()                      <span class="tok-c"># 1. delete chrome outright</span>
+text = soup.get_text(separator=<span class="tok-s">"\n"</span>)     <span class="tok-c"># 2. flatten to lines</span>
+<span class="tok-k">return</span> _normalize(text, max_chars=max_chars)   <span class="tok-c"># 3. collapse + truncate</span></pre>
+      <p>The tag list is the interesting part: <code>nav</code>, <code>footer</code>, <code>header</code> and <code>aside</code> are stripped not because they are invalid but because their text is <b>the same on every page of a site</b>. Leaving them in means every source from one domain shares a few hundred identical tokens, which both wastes budget and gives the extractor spurious repetition to latch onto.</p>
+      <p>Truncation prefers a word boundary, but only if one is close:</p>
+<pre><span class="tok-k">if</span> last_space &gt; max_chars * <span class="tok-n">0.8</span>:   <span class="tok-c"># only trim back if we're not losing much</span>
+    cut = cut[:last_space]
+<span class="tok-k">return</span> cut.rstrip() + <span class="tok-s">"…"</span></pre>
+      <p>The 0.8 guard stops a pathological page &mdash; one long unbroken string, say minified JSON &mdash; from being cut back to almost nothing just to land on a space. The trailing ellipsis is a visible marker that a source was clipped.</p>
+      <div class="callout info"><span class="ct">Failing soft by design</span><p><code>clean_html</code> returns <code>""</code> for empty or unparseable input instead of raising. Combined with <code>content = page["text"] or hit["snippet"]</code>, a page that parses to nothing degrades to its search snippet rather than producing an empty source.</p></div>
+    </section>
+
+    <section id="snippet-vs-content" data-group="The pipeline">
+      <div class="sec-head"><div><div class="sec-kicker">The two text fields</div><h2><code>snippet</code> vs <code>content</code></h2></div></div>
+      <p class="lead">Both are text on the same <code>RawSource</code>, and they come from completely different places at completely different costs.</p>
+      <table class="tbl">
+        <tr><th></th><th><code>snippet</code></th><th><code>content</code></th></tr>
+        <tr><td>Written by</td><td>the <b>search engine</b></td><td>the <b>page itself</b></td></tr>
+        <tr><td>Source</td><td>Tavily&rsquo;s <code>content</code> field, or DDG&rsquo;s <code>.result__snippet</code></td><td><code>httpx</code> GET &rarr; <code>clean_html()</code></td></tr>
+        <tr><td>Cost</td><td>free &mdash; arrives with the search response</td><td>one HTTP request, a semaphore slot, up to 8s</td></tr>
+        <tr><td>Size</td><td>a sentence or two</td><td>up to 8 000 characters</td></tr>
+        <tr><td>Relevance</td><td>picked <b>for your query</b></td><td>the whole page, query-agnostic</td></tr>
+        <tr><td>Can it fail?</td><td>no &mdash; if the search returned, it exists</td><td>yes, constantly</td></tr>
+      </table>
+      <p>The relationship between them is a single <code>or</code>:</p>
+<pre>page = <span class="tok-k">await</span> deps.fetcher.fetch(hit[<span class="tok-s">"url"</span>])
+content = page[<span class="tok-s">"text"</span>] <span class="tok-k">or</span> hit[<span class="tok-s">"snippet"</span>]      <span class="tok-c"># empty page → snippet</span>
+<span class="tok-c"># …and on FetchError:</span>
+content = hit[<span class="tok-s">"snippet"</span>]                          <span class="tok-c"># no page at all → snippet</span></pre>
+      <div class="callout key"><span class="ct">A source where snippet == content is a degraded source</span><p>That equality is the tell that the fetch failed or the page cleaned to nothing. Both fields are stored precisely so the difference stays visible &mdash; had the node overwritten <code>snippet</code>, you could never tell a rich source from a fallback one when debugging a thin report.</p></div>
+
+      <h3>Downstream they are used in opposite directions</h3>
+      <table class="tbl">
+        <tr><th>Consumer</th><th>Preference</th><th>Why</th></tr>
+        <tr><td><code>_render.py</code> &mdash; prompt blocks</td><td><code>content or snippet</code></td><td>the LLM wants as much real text as the budget allows</td></tr>
+        <tr><td><code>pack.py</code> &mdash; chat retrieval body</td><td><code>content or snippet</code></td><td>same: rank and quote over full text</td></tr>
+        <tr><td><code>pack.py</code> &mdash; citation display</td><td><code>snippet or content[:200]</code></td><td>a citation wants a short, query-relevant blurb, not a page dump</td></tr>
+      </table>
+      <p>So <code>content</code> is the <i>reasoning</i> field and <code>snippet</code> is the <i>display</i> field, with each falling back to the other. Keeping both is what lets that split exist at all.</p>
+    </section>
+
+    <!-- ══════════ CONCURRENCY ══════════ -->
+    <section id="concurrency" data-group="Concurrency">
+      <div class="sec-head"><div><div class="sec-kicker">Bounded fan-out</div><h2>Two gathers and one semaphore</h2></div></div>
+      <p class="lead">The parallelism is nested, and only the inner layer is bounded.</p>
+<pre><span class="tok-c"># outer: every unresearched question at once</span>
+collected = <span class="tok-k">await</span> asyncio.gather(
+    *[_research_question(q, errors) <span class="tok-k">for</span> q <span class="tok-k">in</span> todo]
+)
+
+<span class="tok-c"># inner: the top 3 hits for one question at once</span>
+tasks = [_fetch_source(hit, errors) <span class="tok-k">for</span> hit <span class="tok-k">in</span> hits[:_FETCH_TOP_N]]
+<span class="tok-k">return</span> list(<span class="tok-k">await</span> asyncio.gather(*tasks))
+
+<span class="tok-c"># the gate, shared by every fetch in the run</span>
+<span class="tok-k">async with</span> semaphore:
+    page = <span class="tok-k">await</span> deps.fetcher.fetch(hit[<span class="tok-s">"url"</span>])</pre>
+      <p><code>asyncio.gather</code> is <code>Promise.all</code>: start everything, wait for all of it, return results in argument order. <code>asyncio.Semaphore(4)</code> is a counter &mdash; <code>async with</code> takes a permit or <b>suspends the coroutine</b> until one frees up. Suspends, not blocks: the event loop keeps serving other requests while a fetch waits its turn.</p>
+      <div class="callout gotcha"><span class="ct">Searches are not gated</span><p>The semaphore wraps only <code>fetch</code>. Search calls fan out one-per-question with no limit, so a ten-question plan fires ten concurrent search-API calls. Fine at current plan sizes and against Tavily&rsquo;s quotas, but it is an unbounded fan-out on paper &mdash; and the first thing to notice if the planner is ever allowed to produce many more questions.</p></div>
+
+      <h3>The semaphore is per-run, not global</h3>
+      <p>It is created inside <code>build_researcher(deps)</code>, which runs once per <code>build_graph</code> &mdash; and <code>build_graph</code> is called once per run in <code>_invoke</code>. So the limit of four is <b>per workflow run</b>. Two concurrent runs on one worker can have eight fetches in flight. A truly global cap would need the semaphore hoisted into <code>WorkflowDeps</code>.</p>
+
+      <h3>Why the shared <code>errors</code> list is safe</h3>
+<pre>errors: list[dict[str, Any]] = []
+<span class="tok-c"># mutated from many concurrent tasks…</span>
+errors.append({<span class="tok-s">"node"</span>: <span class="tok-s">"researcher"</span>, <span class="tok-s">"url"</span>: hit[<span class="tok-s">"url"</span>], <span class="tok-s">"error"</span>: str(exc)})</pre>
+      <p>No lock, and none needed. Every task runs on the same event loop thread, and <code>list.append</code> contains no <code>await</code> &mdash; so it cannot be interrupted part-way. This is the single-threaded-concurrency guarantee doing real work: you only need synchronisation around state that stays inconsistent <i>across</i> an await point.</p>
+    </section>
+
+    <section id="dedupe" data-group="Concurrency">
+      <div class="sec-head"><div><div class="sec-kicker">Idempotence</div><h2>De-duplication happens twice</h2></div></div>
+      <p>Two different URL collisions are possible, and they are handled in two different places.</p>
+      <table class="tbl">
+        <tr><th>Collision</th><th>Handled by</th><th>Where</th></tr>
+        <tr><td>Two questions surface the same page in <b>one</b> pass</td><td>an explicit <code>seen</code> set in the node</td><td><code>researcher.py</code></td></tr>
+        <tr><td>A later iteration re-finds a page from an <b>earlier</b> pass</td><td><code>_merge_unique_sources</code>, the channel reducer</td><td><code>state.py</code></td></tr>
+      </table>
+<pre><span class="tok-c"># in-pass dedupe — the node's own responsibility</span>
+seen: set[str] = set()
+<span class="tok-k">for</span> src <span class="tok-k">in</span> sources:
+    <span class="tok-k">if</span> src[<span class="tok-s">"url"</span>] <span class="tok-k">in</span> seen: <span class="tok-k">continue</span>
+    seen.add(src[<span class="tok-s">"url"</span>]); deduped.append(src)</pre>
+      <p>The node cannot rely on the reducer alone, because the reducer merges the node&rsquo;s <i>return value</i> into existing state &mdash; duplicates <b>inside</b> that single return would survive. And the reducer cannot be dropped either, because the node has no visibility of earlier iterations. Both layers are load-bearing.</p>
+      <div class="callout why"><span class="ct">Why URL is a good enough key</span><p>It is not perfect &mdash; tracking parameters and <code>http</code> vs <code>https</code> defeat it, and <code>fetch</code> follows redirects so the stored url may differ from the one searched. A stricter version would normalise the URL or hash the cleaned text. Naming that limitation is better than pretending the key is exact.</p></div>
+    </section>
+
+    <section id="site-crawl" data-group="Concurrency">
+      <div class="sec-head"><div><div class="sec-kicker">First pass only</div><h2>The company-site crawl</h2></div></div>
+      <p>Search finds what the world says about a company. It is unreliable at surfacing what the company says about <b>itself</b>, so iteration 0 also walks six fixed paths on the target domain:</p>
+<pre>_SITE_PATHS = (<span class="tok-s">""</span>, <span class="tok-s">"/about"</span>, <span class="tok-s">"/products"</span>, <span class="tok-s">"/pricing"</span>, <span class="tok-s">"/careers"</span>, <span class="tok-s">"/blog"</span>)
+
+<span class="tok-k">if</span> iteration == <span class="tok-n">0</span>:
+    sources.extend(<span class="tok-k">await</span> self._crawl_site(state[<span class="tok-s">"website"</span>], errors))</pre>
+      <p>Those paths are chosen for what a sales-research objective actually needs: positioning (<code>/about</code>), what they sell (<code>/products</code>), how they sell it (<code>/pricing</code>), where they are investing (<code>/careers</code>), and recent activity (<code>/blog</code>). It is a heuristic, not a crawler &mdash; no sitemap, no link following, no robots.txt handling.</p>
+      <div class="callout info"><span class="ct">This branch swallows errors on purpose</span><p><code>_crawl_site</code> catches <code>FetchError</code> and returns <code>None</code> without recording anything &mdash; unlike the search path, which logs into <code>state.errors</code>. Most of these paths <b>will</b> 404 on any given site; recording six expected misses per run would drown the genuine failures. Silence is right here, and noise would be wrong.</p></div>
+      <p>The crawled pages get a synthesised title (<code>"{website} /about"</code>) and their <code>snippet</code> is just the first 280 characters of their own text &mdash; there is no search engine in this path to supply one.</p>
+    </section>
+
+    <!-- ══════════ FAILURE ══════════ -->
+    <section id="failure" data-group="Failure">
+      <div class="sec-head"><div><div class="sec-kicker">Degrade, don&rsquo;t die</div><h2>The fallback ladder</h2></div></div>
+      <p class="lead">This node expects failure. There are four rungs, and only the last one fails the run.</p>
+      <div class="flow">
+        <div class="flow-box"><b>1 &middot; one URL won&rsquo;t fetch</b><span class="sub"><code>FetchError</code> caught &rarr; <code>content = snippet</code>, error logged &rarr; <b>source still produced</b></span></div>
+        <div class="flow-arr">&darr;</div>
+        <div class="flow-box"><b>2 &middot; the page cleans to nothing</b><span class="sub"><code>page["text"] or hit["snippet"]</code> &rarr; <b>source still produced</b></span></div>
+        <div class="flow-arr">&darr;</div>
+        <div class="flow-box decision"><b>3 &middot; a whole search fails</b><span class="sub">caught per question, logged, returns <code>[]</code> &rarr; that question contributes nothing, the others continue</span></div>
+        <div class="flow-arr">&darr;</div>
+        <div class="flow-box end" style="border-color:rgba(244,112,103,0.5)"><b>4 &middot; nothing at all, ever</b><span class="sub">raise &rarr; <code>node_errored</code> &rarr; run fails</span></div>
+      </div>
+<pre><span class="tok-c"># the only line in this node that can fail the run</span>
+<span class="tok-k">if not</span> deduped <span class="tok-k">and not</span> (state.get(<span class="tok-s">"raw_sources"</span>) <span class="tok-k">or</span> []):
+    <span class="tok-k">raise</span> RuntimeError(<span class="tok-s">"Researcher gathered no sources (all searches/fetches failed)."</span>)</pre>
+      <div class="callout key"><span class="ct">Read the second condition carefully</span><p>The run only dies if this pass produced nothing <b>and</b> no earlier pass did either. On a loop-back iteration that gathers zero new sources, the node returns quietly and the workflow proceeds to report on what it already has. A fruitless <i>second</i> pass is a disappointing report; a fruitless <i>first</i> pass is a report with no evidence at all, which is worse than an error.</p></div>
+
+      <h3>This particular failure is deliberately not retried</h3>
+      <p>The graph&rsquo;s retry policy only fires on transient transport exceptions:</p>
+<pre>_TRANSIENT = (httpx.HTTPError, ConnectionError, TimeoutError, asyncio.TimeoutError)
+<span class="tok-k">def</span> <span class="tok-f">_retry_on</span>(exc: Exception) -&gt; bool:
+    <span class="tok-k">return</span> isinstance(exc, _TRANSIENT)</pre>
+      <p>A <code>RuntimeError</code> is not in that tuple, so &ldquo;gathered nothing&rdquo; fails immediately rather than burning two more full passes over the whole plan. The individual network failures underneath it were already retried three times each inside the search client.</p>
+    </section>
+
+    <section id="knobs" data-group="Failure">
+      <div class="sec-head"><div><div class="sec-kicker">Reference</div><h2>Every knob, and what it bounds</h2></div></div>
+      <table class="tbl">
+        <tr><th>Setting</th><th>Default</th><th>Bounds</th></tr>
+        <tr><td><code>search_provider</code></td><td><code>tavily</code></td><td>which client <code>build_search_client</code> returns</td></tr>
+        <tr><td><code>search_results_per_query</code></td><td><code>5</code></td><td>hits <b>requested</b> per question (<code>k</code>)</td></tr>
+        <tr><td><code>_FETCH_TOP_N</code> <span class="pill neutral">module constant</span></td><td><code>3</code></td><td>hits actually <b>fetched</b> per question</td></tr>
+        <tr><td><code>fetch_concurrency</code></td><td><code>4</code></td><td>simultaneous fetches, per run</td></tr>
+        <tr><td><code>fetch_timeout_seconds</code></td><td><code>8.0</code></td><td>one HTTP request, end to end</td></tr>
+        <tr><td><code>fetch_max_bytes</code></td><td><code>1_000_000</code></td><td>bytes read before the stream is cut</td></tr>
+        <tr><td><code>DEFAULT_MAX_CHARS</code> <span class="pill neutral">module constant</span></td><td><code>8000</code></td><td>cleaned text kept per source</td></tr>
+      </table>
+      <div class="callout gotcha"><span class="ct">The 5-versus-3 gap</span><p>Each search asks for five results and then fetches three. The other two hits are <b>discarded entirely</b> &mdash; not even kept as snippet-only sources, though they cost nothing extra to keep since the snippet already arrived. Two knobs that ought to be related are a setting and a hard-coded constant respectively, so they can drift. Cheap fix, good thing to have noticed.</p></div>
+    </section>
+
+    <!-- ══════════ Q&A ══════════ -->
+    <section id="qa" data-group="Rapid-fire Q&amp;A">
+      <div class="sec-head"><div><div class="sec-kicker">Flashcards</div><h2>Rapid-fire</h2></div></div>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What&rsquo;s the difference between <code>snippet</code> and <code>content</code>?</summary><div class="qa-body"><p><code>snippet</code> comes from the search engine and is free &mdash; a query-relevant sentence or two that always exists. <code>content</code> is the fetched page, cleaned and capped at 8 000 chars, and it can fail. On any fetch failure <code>content</code> falls back to <code>snippet</code>, so a source where the two are equal is a degraded source. The LLM prompts prefer <code>content</code>; citation display prefers <code>snippet</code>.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How do you stop the researcher hammering the network?</summary><div class="qa-body"><p>An <code>asyncio.Semaphore(4)</code> shared by every fetch in the run, including the site crawl. <code>async with semaphore</code> suspends the coroutine rather than blocking a thread, so waiting fetches cost nothing while other requests are served. Note the honest caveat: it bounds fetches only &mdash; searches fan out one per question, ungated.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why doesn&rsquo;t one dead URL fail the run?</summary><div class="qa-body"><p>Because failure is expected, so it degrades in tiers: a dead URL falls back to its snippet and records an entry in <code>state.errors</code>; a dead search drops that one question and returns <code>[]</code>; only a pass that yields nothing <i>and</i> has no prior sources raises. That last condition matters &mdash; a fruitless second iteration still lets the workflow report on what it already gathered.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why de-duplicate twice?</summary><div class="qa-body"><p>Different collisions. The <code>seen</code> set inside the node removes duplicates <i>within</i> one pass, which the reducer cannot see because it only merges the node&rsquo;s return value into existing state. The <code>_merge_unique_sources</code> reducer removes duplicates <i>across</i> iterations, which the node cannot see because it has no view of prior state. Neither layer is redundant.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How do you avoid re-searching everything on the research loop?</summary><div class="qa-body"><p><code>researched_question_ids</code> is an append-only reducer channel. Each pass filters the plan down to ids it has not seen, so a loop-back only chases the planner&rsquo;s new gap-closing questions. It is also why the conditional edge routes back to the <b>planner</b> rather than the researcher &mdash; without new questions, <code>todo</code> would be empty and the pass would fetch nothing.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why is a shared mutable <code>errors</code> list safe without a lock?</summary><div class="qa-body"><p>All the tasks run on one event-loop thread and <code>list.append</code> contains no <code>await</code>, so it cannot be suspended half-done. In asyncio you only need synchronisation around invariants that must hold <i>across</i> an await point &mdash; that is the whole difference from threading, where any bytecode boundary is a preemption point.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why strip <code>nav</code>, <code>header</code> and <code>footer</code> specifically?</summary><div class="qa-body"><p>Their text is identical on every page of a site. Left in, every source from one domain shares hundreds of the same tokens &mdash; wasting the prompt budget and handing the signal extractor spurious repetition that looks like emphasis. Removing site chrome is as much about signal quality as size.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why does the node depend on a <code>Protocol</code> instead of a client?</summary><div class="qa-body"><p>So the node depends on a capability, not a vendor. Tavily, DuckDuckGo and the test fake all satisfy <code>SearchClient</code> structurally &mdash; no inheritance &mdash; and swapping providers touches one factory function. It is the same dependency inversion as <code>WorkflowDeps</code>, and it is what lets the entire graph be tested with zero network.</p></div></details>
+
+      <p class="footer-note">This node is the best answer you have to &ldquo;tell me about handling unreliable dependencies.&rdquo; It has bounded concurrency, a retry policy scoped to the errors that deserve one, a four-rung degradation ladder, and a named limitation in every layer. <a href="langgraph-workflow.html">&larr; Back to the workflow graph</a></p>
+    </section>
+
+    <div class="no-results" id="noResults">No topics match your filter.</div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
