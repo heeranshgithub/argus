@@ -18,6 +18,9 @@
 const PAGE = location.pathname.split('/').pop() || 'index.html'
 const STORE_KEY = 'argus-prep-reviewed:' + PAGE // FROZEN — do not edit
 const LEGACY_KEY = 'argus-prep-reviewed' // the original v1 global key
+// Pages renamed after v1 — read the old key once so progress carries over.
+// Both hubs used to be called index.html, so they collided on this namespace.
+const RENAMED_FROM = { 'frontend-prep.html': 'index.html' }
 
 function safeGet(key) {
   try {
@@ -37,6 +40,13 @@ function safeSet(key, val) {
 function loadReviewed() {
   // current key wins; otherwise migrate the legacy global key forward (once)
   let raw = safeGet(STORE_KEY)
+  if (raw == null && RENAMED_FROM[PAGE]) {
+    const moved = safeGet('argus-prep-reviewed:' + RENAMED_FROM[PAGE])
+    if (moved != null) {
+      safeSet(STORE_KEY, moved)
+      raw = moved
+    }
+  }
   if (raw == null) {
     const legacy = safeGet(LEGACY_KEY)
     if (legacy != null) {

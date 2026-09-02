@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>202 + BackgroundTasks · Deep Dive</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='12' r='9' stroke='%2356d364' stroke-width='2' fill='none'/%3E%3Cpath d='M12 7v5l3 2' stroke='%2356d364' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+</head>
+<body>
+
+<button class="menu-toggle" aria-label="Menu" onclick="document.querySelector('.sidebar').classList.toggle('open')">
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+
+<div class="app">
+  <aside class="sidebar">
+    <a href="argus-prep.html" class="back-link">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      Back to Argus Prep
+    </a>
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#dffbe4" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      </div>
+      <div>
+        <div class="brand-name">202 + BackgroundTasks</div>
+        <div class="brand-sub">Async request-reply · grok it</div>
+      </div>
+    </div>
+
+    <div class="search-wrap">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="search" id="search" placeholder="Filter topics…  (press /)" autocomplete="off" />
+    </div>
+
+    <nav class="nav-pages" style="border-bottom:1px solid var(--border);margin:0 0 12px;padding-bottom:8px">
+      <div class="nav-group">
+        <div class="nav-group-title">Backend &amp; system design</div>
+        <a class="nav-link" href="argus-prep.html"><span class="dot"></span><span class="lbl">Argus Prep &middot; hub</span></a>
+        <a class="nav-link" href="langgraph-workflow.html"><span class="dot"></span><span class="lbl">LangGraph Workflow</span></a>
+        <a class="nav-link" href="sse-streaming.html"><span class="dot"></span><span class="lbl">SSE + sinceSeq</span></a>
+        <span class="nav-link active" aria-current="page" style="cursor:default"><span class="dot"></span><span class="lbl">202 + BackgroundTasks</span></span>
+        <a class="nav-link" href="url-shortener.html"><span class="dot"></span><span class="lbl">URL Shortener</span></a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Frontend</div>
+        <a class="nav-link" href="frontend-prep/frontend-prep.html"><span class="dot"></span><span class="lbl">Frontend Prep &middot; hub</span></a>
+        <a class="nav-link" href="frontend-prep/streaming-deep-dive.html"><span class="dot"></span><span class="lbl">Streaming &amp; Optimistic UI</span></a>
+      </div>
+    </nav>
+    <nav id="nav"></nav>
+  </aside>
+
+  <main class="content">
+    <header class="hero">
+      <h1>One endpoint, <span class="grad">two sides of a line</span></h1>
+      <p><code>POST /api/sessions/{id}/run</code> answers in milliseconds and then runs a 30–90 second LangGraph workflow on the same worker. Everything confusing about this endpoint comes from <b>not knowing exactly where that line falls</b>. This page puts it under a microscope: every gate before the 202, the precise Starlette mechanic that defers the work, and what it costs you.</p>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar"><i id="progressFill"></i></div>
+        <div class="progress-label" id="progressLabel">0 of 0 sections reviewed</div>
+      </div>
+      <div class="hero-meta">
+        <span><b>Touches</b> · async request-reply · ASGI internals · concurrency · failure design</span>
+        <span><b>Pattern</b> · commit first, answer, then defer</span>
+      </div>
+    </header>
+
+    <div class="content-inner" id="sections">
+
+    <!-- ════════════ ORIENT ════════════ -->
+    <section id="why-202" data-group="Orient">
+      <div class="sec-head"><div><div class="sec-kicker">Start here</div><h2>The problem, stated precisely</h2></div></div>
+      <p class="lead">The workflow is six LLM-backed graph nodes with a research loop. Every node makes network calls. A full run is a minute or more. A POST cannot sit on that.</p>
+      <p>Holding the connection open for ninety seconds fails three ways: proxies and load balancers time it out, a refresh orphans the work with no way to find it again, and the browser has nothing to render in the meantime. But you also cannot just fire-and-forget — the client needs a <b>handle</b> on the work it just started.</p>
+      <div class="callout key"><span class="ct">The contract we need</span><p>The POST must return <b>immediately</b> with an identifier that <b>already exists and is already queryable</b>, and the actual work must start <b>after</b> that response is on the wire. Progress travels on a different connection entirely.</p></div>
+      <p>That is the <b>async request-reply</b> pattern, and naming it is worth doing out loud. <code>202 Accepted</code> is the status code that means exactly this: <i>I have taken responsibility for this work, here is where to watch it, I am not going to do it while you wait.</i></p>
+    </section>
+
+    <section id="mental-model" data-group="Orient">
+      <div class="sec-head"><div><div class="sec-kicker">The core idea</div><h2>The whole split in one picture</h2></div></div>
+      <p>Two things become free at two <b>different</b> moments, and conflating them is the single biggest source of confusion here.</p>
+<div class="card" style="padding:20px 16px 12px">
+      <div style="overflow-x:auto">
+      <svg viewBox="0 0 980 432" role="img" style="min-width:700px;width:100%;height:auto;display:block;font-family:var(--mono)"
+           aria-label="Timeline: request-side steps run before the 202 is flushed; the graph runs after it, while the ASGI call stays open. The browser holds two separate connections.">
+        <defs>
+          <marker id="bt-mut" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--muted)"/>
+          </marker>
+          <marker id="bt-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--accent)"/>
+          </marker>
+          <marker id="bt-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--gold)"/>
+          </marker>
+        </defs>
+
+        <!-- ============ SERVER LANE ============ -->
+        <text x="30" y="42" font-size="11" fill="var(--muted)" letter-spacing="0.9">SERVER &#183; one uvicorn worker, one event loop</text>
+
+        <text x="244" y="70" font-size="10.5" fill="var(--accent)" text-anchor="middle" letter-spacing="0.6">while the client waits</text>
+        <text x="726" y="70" font-size="10.5" fill="var(--gold)" text-anchor="middle" letter-spacing="0.6">after the client has been answered</text>
+
+        <!-- request-side boxes -->
+        <g fill="var(--panel-2)" stroke="var(--accent)" stroke-opacity="0.45" stroke-width="1.2">
+          <rect x="30"  y="84" width="98" height="46" rx="8"/>
+          <rect x="140" y="84" width="98" height="46" rx="8"/>
+          <rect x="250" y="84" width="98" height="46" rx="8"/>
+          <rect x="360" y="84" width="98" height="46" rx="8"/>
+        </g>
+        <g font-size="11" fill="var(--text-2)" text-anchor="middle">
+          <text x="79"  y="104">route +</text><text x="79"  y="119">rate limit</text>
+          <text x="189" y="104">resolve</text><text x="189" y="119">db + deps</text>
+          <text x="299" y="104">session? +</text><text x="299" y="119">active run?</text>
+          <text x="409" y="104">create_run</text><text x="409" y="119">add_task</text>
+        </g>
+        <g stroke="var(--accent)" stroke-opacity="0.55" stroke-width="1.2" fill="none" marker-end="url(#bt-acc)">
+          <path d="M128 107 L136 107"/><path d="M238 107 L246 107"/><path d="M348 107 L356 107"/>
+        </g>
+
+        <!-- the boundary -->
+        <line x1="470" y1="54" x2="470" y2="366" stroke="var(--blue)" stroke-width="1.5" stroke-dasharray="5 6"/>
+        <circle cx="470" cy="54" r="3" fill="var(--blue)"/>
+        <text x="478" y="45" font-size="12" fill="var(--blue)">202 flushed &#8594; response body on the wire</text>
+
+        <!-- after-response boxes -->
+        <g fill="var(--panel-2)" stroke="var(--gold)" stroke-opacity="0.45" stroke-width="1.2">
+          <rect x="492" y="84" width="118" height="46" rx="8"/>
+          <rect x="622" y="84" width="176" height="46" rx="8"/>
+          <rect x="810" y="84" width="150" height="46" rx="8"/>
+        </g>
+        <g font-size="11" fill="var(--text-2)" text-anchor="middle">
+          <text x="551" y="104">bind RunContext</text><text x="551" y="119">emit run_started</text>
+          <text x="710" y="104">graph.ainvoke</text><text x="710" y="119">6 nodes &#183; 30&#8211;90 s</text>
+          <text x="885" y="104">mark completed</text><text x="885" y="119">/ failed</text>
+        </g>
+        <g stroke="var(--gold)" stroke-opacity="0.55" stroke-width="1.2" fill="none" marker-end="url(#bt-gold)">
+          <path d="M610 107 L618 107"/><path d="M798 107 L806 107"/>
+        </g>
+
+        <!-- ASGI bracket -->
+        <path d="M30 148 L30 160 L960 160 L960 148" fill="none" stroke="var(--border-2)" stroke-width="1.2"/>
+        <text x="495" y="179" font-size="11" fill="var(--muted)" text-anchor="middle">one ASGI call &#8212; still open this entire time; it returns here, not at the dashed line</text>
+
+        <line x1="30" y1="204" x2="960" y2="204" stroke="var(--border)"/>
+
+        <!-- ============ BROWSER LANE ============ -->
+        <text x="30" y="230" font-size="11" fill="var(--muted)" letter-spacing="0.9">BROWSER &#183; two independent connections</text>
+
+        <text x="30"  y="264" font-size="12" fill="var(--accent)">POST /run</text>
+        <text x="460" y="264" font-size="11" fill="var(--muted)" text-anchor="end">~10 ms, then closed</text>
+        <line x1="30" y1="280" x2="470" y2="280" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="30" cy="280" r="4" fill="var(--accent)"/>
+        <circle cx="470" cy="280" r="4" fill="var(--accent)"/>
+
+        <path d="M470 290 C 470 316, 478 330, 488 346" fill="none" stroke="var(--muted)" stroke-width="1.2"
+              stroke-dasharray="3 4" marker-end="url(#bt-mut)"/>
+        <text x="482" y="312" font-size="10.5" fill="var(--text-2)">runId in hand &#8594; opens the stream</text>
+
+        <text x="492" y="336" font-size="12" fill="var(--gold)">GET &#8230;/runs/{runId}/events  (SSE)</text>
+        <line x1="492" y1="352" x2="936" y2="352" stroke="var(--gold)" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="492" cy="352" r="4" fill="var(--gold)"/>
+        <g stroke="var(--gold)" stroke-width="2">
+          <line x1="536" y1="345" x2="536" y2="359"/><line x1="580" y1="345" x2="580" y2="359"/>
+          <line x1="624" y1="345" x2="624" y2="359"/><line x1="686" y1="345" x2="686" y2="359"/>
+          <line x1="748" y1="345" x2="748" y2="359"/><line x1="822" y1="345" x2="822" y2="359"/>
+          <line x1="900" y1="345" x2="900" y2="359"/>
+        </g>
+        <text x="944" y="356" font-size="11" fill="var(--muted)">held open</text>
+        <text x="536" y="375" font-size="10.5" fill="var(--muted)">node_started / node_output / node_finished &#8230; run_completed</text>
+
+        <line x1="30" y1="404" x2="946" y2="404" stroke="var(--border)" marker-end="url(#bt-mut)"/>
+        <text x="30" y="424" font-size="10" fill="var(--muted)">time, not to scale</text>
+        <text x="946" y="424" font-size="10" fill="var(--muted)" text-anchor="end">worker released</text>
+      </svg>
+      </div>
+      <p class="muted" style="font-size:12.5px;margin:10px 2px 0">The green half runs while the browser is blocked on the POST; the gold half runs after it has already been answered. Both sit inside <b>one</b> ASGI call &#8212; which is why that request's coroutine stays alive long after the client is free. The event loop is <b>not</b> blocked: every <code>await</code> inside the graph yields, so other requests are served normally throughout.</p>
+    </div>
+      <div class="callout key"><span class="ct">The one sentence to remember</span><p>The <b>client</b> is released when the response body is sent. The <b>worker</b> is released only when the background coroutine finishes. Those are minutes apart, and the POST's own latency log only measures the first one.</p></div>
+      <p>Progress never travels on the POST. The two connections share exactly one thing: the <code>runId</code>.</p>
+    </section>
+
+    <!-- ════════════ THE REQUEST HALF ════════════ -->
+    <section id="gates" data-group="Before the 202">
+      <div class="sec-head"><div><div class="sec-kicker">The request half</div><h2>Nine gates before the response exists</h2></div></div>
+      <p class="lead">The handler body is one line, because everything interesting is a decorator, a dependency, or the service beneath it.</p>
+<pre><span class="tok-f">@router.post</span>(
+    <span class="tok-s">"/{session_id}/run"</span>,
+    response_model=RunAccepted,
+    response_model_by_alias=<span class="tok-n">True</span>,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+<span class="tok-f">@limiter.limit</span>(run_limit)
+<span class="tok-k">async def</span> <span class="tok-f">start_run</span>(
+    request: Request,          <span class="tok-c"># unused in the body — slowapi requires it by name</span>
+    session_id: str,
+    db: DbDep,                 <span class="tok-c"># Depends(get_db)</span>
+    deps: DepsDep,             <span class="tok-c"># Depends(get_workflow_deps)</span>
+    background_tasks: BackgroundTasks,
+) -&gt; RunAccepted:
+    <span class="tok-k">return await</span> workflow_service.start_run(db, deps, session_id, background_tasks)</pre>
+
+      <table class="tbl">
+        <tr><th>#</th><th>Gate</th><th>What it actually does</th><th>Exit</th></tr>
+        <tr><td>1</td><td>Middleware</td><td><code>RequestIDMiddleware</code> is added <b>last</b>, so it sits <b>outermost</b>. Mints a <code>request_id</code>, binds route + method into structlog contextvars, starts a latency timer. Then SlowAPI, then CORS.</td><td>—</td></tr>
+        <tr><td>2</td><td>Routing</td><td><code>session_id</code> is a bare <code>str</code>. No body, no validation model — so a malformed id is <b>not</b> caught here; it fails later in the repo when BSON parses it.</td><td>—</td></tr>
+        <tr><td>3</td><td>Rate limit</td><td>5/minute per IP. <code>run_limit</code> is a <b>callable</b>, not a string — the decorator runs at import time, so a literal would freeze the pre-<code>configure()</code> default. Disabled under <code>env=test</code>.</td><td><span class="pill gold">429</span></td></tr>
+        <tr><td>4</td><td>Resolve db</td><td><code>get_db</code> returns <code>app.state.mongo.db</code> — the <b>process-wide</b> Motor handle, not a per-request connection. This one fact is what makes the background half legal.</td><td>—</td></tr>
+        <tr><td>5</td><td>Resolve deps</td><td>Builds the LLM/search/fetch clients on first use, caches on <code>app.state</code>. Lazy on purpose: a missing API key takes down only the workflow routes, not health or sessions.</td><td><span class="pill gold">503</span></td></tr>
+        <tr><td>6</td><td>Inject tasks</td><td>FastAPI sees the annotation and hands you an empty Starlette task list. You never construct it — declaring the parameter <i>is</i> the wiring.</td><td>—</td></tr>
+        <tr><td>7</td><td>Session exists?</td><td><code>session_service.get_session</code> converts a repo <code>None</code> into a domain error, so handlers never see <code>None</code>.</td><td><span class="pill gold">404</span> <span class="pill gold">400</span></td></tr>
+        <tr><td>8</td><td>Already running?</td><td><code>has_active_run</code> — a projected <code>find_one</code>. Without it, two POSTs queue two <code>execute</code>s against the same <code>thread_id</code> and corrupt each other's checkpoints.</td><td><span class="pill gold">409</span></td></tr>
+        <tr><td>9</td><td>Commit &amp; answer</td><td>Insert the run doc, flip session to <code>running</code>, queue the task, serialize <code>by_alias</code> so the wire says <code>runId</code>.</td><td><span class="pill acc">202</span></td></tr>
+      </table>
+    </section>
+
+    <section id="ordering" data-group="Before the 202">
+      <div class="sec-head"><div><div class="sec-kicker">The ordering rule</div><h2>Why <code>start()</code> must precede <code>add_task</code></h2></div></div>
+<pre><span class="tok-k">async def</span> <span class="tok-f">start_run</span>(db, deps, session_id, background_tasks) -&gt; RunAccepted:
+    <span class="tok-k">await</span> session_service.get_session(db, session_id)   <span class="tok-c"># raises SessionNotFound</span>
+    <span class="tok-k">if await</span> workflow_repo.has_active_run(db, session_id):
+        <span class="tok-k">raise</span> SessionAlreadyRunning(session_id)
+
+    runner = WorkflowRunner(db, deps)
+    run_id = <span class="tok-k">await</span> runner.start(session_id)                <span class="tok-c"># ① writes to Mongo NOW</span>
+    background_tasks.add_task(runner.execute, run_id, session_id)  <span class="tok-c"># ② queues only</span>
+    <span class="tok-k">return</span> RunAccepted(run_id=run_id, status=RunStatus.RUNNING)</pre>
+      <div class="callout why"><span class="ct">The reason the runner has two methods</span><p>The instant the client holds a <code>runId</code> it fires <code>GET /runs/{runId}</code> for first paint and <code>GET /runs/{runId}/events</code> for the stream. Both call <code>get_run</code>, which raises <code>RunNotFound</code> on a missing document. <b>Schedule first and you hand out an id that 404s.</b> So <code>start()</code> is the synchronous prep that must be durable before you answer, and <code>execute()</code> is everything that may take a minute.</p></div>
+      <p>This generalizes: in any async request-reply endpoint, <b>the receipt must be committed before it is handed out</b>. The 202 body is a promise, and a promise referencing a row that does not exist yet is a lie you will debug at 2am.</p>
+    </section>
+
+    <!-- ════════════ THE BOUNDARY ════════════ -->
+    <section id="add-task" data-group="The Boundary">
+      <div class="sec-head"><div><div class="sec-kicker">The mechanism</div><h2>What <code>add_task</code> actually does</h2></div></div>
+      <p class="lead">It does not start anything. It appends a <code>BackgroundTask(func, *args)</code> to a list. That is the whole method.</p>
+      <p>FastAPI attaches that list to the <code>Response</code> object it builds from your return value. Starlette's <code>Response.__call__</code> then does three things in <b>strict order</b>:</p>
+      <h3>Why this is possible: <code>send()</code> is not <code>return</code></h3>
+      <p>ASGI is a calling convention between the server and your app. The <b>entire application is one async callable</b>, and uvicorn invokes it <b>exactly once per HTTP request</b>:</p>
+<pre><span class="tok-k">async def</span> <span class="tok-f">app</span>(scope, receive, send) -&gt; <span class="tok-n">None</span>: ...
+<span class="tok-c">#   scope   — request metadata (method, path, headers)</span>
+<span class="tok-c">#   receive — await it to pull messages FROM the client</span>
+<span class="tok-c">#   send    — await it to push messages TO the client</span>
+
+<span class="tok-c"># uvicorn, once per request (httptools_impl.py):</span>
+result = <span class="tok-k">await</span> app(self.scope, self.receive, self.send)</pre>
+      <p>Look at the return type: <code>None</code>. <b>The response is not the return value.</b> It is pushed out through <code>send()</code> as messages, in the <i>middle</i> of the call — which is exactly what Starlette does:</p>
+<pre><span class="tok-c"># starlette/responses.py — Response.__call__</span>
+<span class="tok-k">await</span> send({<span class="tok-s">"type"</span>: <span class="tok-s">"http.response.start"</span>, <span class="tok-s">"status"</span>: self.status_code, ...})
+<span class="tok-k">await</span> send({<span class="tok-s">"type"</span>: <span class="tok-s">"http.response.body"</span>, <span class="tok-s">"body"</span>: self.body})   <span class="tok-c">← client is done</span>
+
+<span class="tok-k">if</span> self.background <span class="tok-k">is not</span> <span class="tok-n">None</span>:
+    <span class="tok-k">await</span> self.background()                                  <span class="tok-c">← the graph, still inside app()</span></pre>
+      <div class="callout key"><span class="ct">Sending the response &#8800; finishing the call</span><p>These are two <b>separate events</b>, and <code>BackgroundTasks</code> lives in the gap between them. Once the body message is sent the client has its 202 and hangs up — but <code>await app(...)</code> has not returned, so every stack frame that led here is still on the stack while your ninety-second workflow runs.</p></div>
+
+      <h3>Which middleware is still on the stack</h3>
+      <p>Starlette&#39;s <code>add_middleware</code> inserts at the <i>front</i> of the list and the stack is built in reverse, so <b>the last one added ends up outermost</b> — that is why <code>main.py</code> adds <code>RequestIDMiddleware</code> last. The full onion for a run request:</p>
+<pre>uvicorn  ──  await app(scope, receive, send)
+└─ ServerErrorMiddleware         <span class="tok-c">(Starlette, always outermost)</span>
+   └─ RequestIDMiddleware        <span class="tok-c">(ours: request_id, latency, metrics)</span>
+      └─ SlowAPIMiddleware       <span class="tok-c">(the 5/min rate limit)</span>
+         └─ CORSMiddleware
+            └─ ExceptionMiddleware   <span class="tok-c">(our domain errors &#8594; 404 / 409 / 503)</span>
+               └─ APIRouter &#8594; start_run() &#8594; Response.__call__
+                                              &#9500;&#9472; send(http.response.start)
+                                              &#9500;&#9472; send(http.response.body)   <span class="tok-c">← client free</span>
+                                              &#9492;&#9472; await background()         <span class="tok-c">← the graph runs HERE</span></pre>
+      <p>Every one of those frames is still live while <code>graph.ainvoke</code> runs. That is not a leak — it is the mechanism.</p>
+
+      <div class="flow">
+        <div class="flow-box start"><b>send http.response.start</b><span class="sub">status line + headers</span></div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-box"><b>send http.response.body</b><span class="sub">the 202 JSON — client is now free</span></div>
+        <div class="flow-arr" data-label="only now">↓</div>
+        <div class="flow-box decision"><b>await self.background()</b><span class="sub">runner.execute(run_id, session_id) — the whole graph</span></div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-box end"><b>ASGI call returns</b><span class="sub">worker is free — up to 90s later</span></div>
+      </div>
+      <div class="callout key"><span class="ct">In-process deferred coroutine, not a job queue</span><p>The graph starts <b>after</b> the client holds the complete 202 — but inside the <b>same ASGI call, on the same event loop, in the same process</b>. <code>BackgroundTasks</code> is Starlette's after-response hook. It has no persistence, no retry, and no redelivery.</p></div>
+      <p>Because <code>execute</code> is <code>async</code>, Starlette awaits it and every LLM / search / Mongo await yields control — other requests keep being served. You are deferring work, not blocking a thread.</p>
+    </section>
+
+    <section id="consequences" data-group="The Boundary">
+      <div class="sec-head"><div><div class="sec-kicker">Consequences</div><h2>Three things that bite</h2></div></div>
+
+      <h3>1 · Latency logs lie</h3>
+      <p><code>RequestIDMiddleware</code> is a <code>BaseHTTPMiddleware</code>, so <code>call_next</code> returns as soon as the response <b>starts</b>. Its <code>request_completed</code> line records single-digit milliseconds for a POST whose worker is then busy for a minute. The number is real; it is just not the cost of the request.</p>
+
+      <h3>2 · The log context survives the crossing</h3>
+      <p>The background task runs in a context <b>copied at task creation</b>, so structlog's <code>request_id</code> is still bound inside <code>execute</code>.</p>
+      <div class="callout info"><span class="ct">Measured, not assumed</span><p>I probed this directly against the app: the <code>request_id</code> visible inside the background task is byte-identical to the <code>X-Request-ID</code> header on the response. So <code>planner_done</code>, <code>run_completed</code>, <code>run_failed</code> — every line the graph emits for the next ninety seconds — carries the same request id as the 202 that started it. <b>That is your grep key across the whole run.</b></p></div>
+
+      <h3>3 · The runner object stays alive on purpose</h3>
+      <p><code>add_task(runner.execute, …)</code> stores a <b>bound method</b>, so <code>runner</code> and its <code>db</code> stay referenced for the duration. This is safe <b>only</b> because <code>runner.db</code> is the process-wide Motor handle. If <code>get_db</code> yielded a per-request session that closed when the response was sent — the way a SQLAlchemy session dependency normally does — this exact code would explode on the first query after the 202.</p>
+      <div class="callout gotcha"><span class="ct">Classic interview trap</span><p>"Can I use my request-scoped DB session inside a background task?" <b>No.</b> The response is already sent, so any resource tied to the request lifecycle is closed or closing. Either use a process-wide handle (what Argus does) or open a fresh session inside the task.</p></div>
+    </section>
+
+    <!-- ════════════ AFTER THE RESPONSE ════════════ -->
+    <section id="execute" data-group="After the 202">
+      <div class="sec-head"><div><div class="sec-kicker">The background half</div><h2><code>execute()</code> and the ContextVar</h2></div></div>
+<pre><span class="tok-k">async def</span> <span class="tok-f">execute</span>(self, run_id, session_id, *, resume=<span class="tok-n">False</span>) -&gt; <span class="tok-n">None</span>:
+    ctx = RunContext(
+        db=self.db, run_id=run_id, session_id=session_id,
+        bus=event_bus, cost_cap_usd=self.settings.workflow_max_cost_usd,
+    )
+    cost_token = llm_tool.set_cost_reporter(ctx.record_cost)
+    <span class="tok-k">async with</span> bind_run_context(ctx):            <span class="tok-c"># ContextVar, NOT GraphState</span>
+        <span class="tok-k">await</span> emit(EventKind.RUN_STARTED, node=RUN_NODE, payload={<span class="tok-s">"resume"</span>: resume})
+        <span class="tok-k">try</span>:
+            final_state = <span class="tok-k">await</span> self._invoke(run_id, session_id, resume=resume)
+        <span class="tok-k">except</span> Exception <span class="tok-k">as</span> exc:
+            <span class="tok-k">await</span> self._fail(run_id, session_id, exc)
+            <span class="tok-k">return</span>
+        <span class="tok-k">finally</span>:
+            llm_tool.reset_cost_reporter(cost_token)
+        <span class="tok-k">await</span> self._complete(run_id, session_id, final_state)</pre>
+      <div class="callout why"><span class="ct">Why a ContextVar and not the graph state</span><p>Nodes need a db handle, the run id, the <code>seq</code> counter and the event bus. None of those can live in <code>GraphState</code>, because the state is <b>msgpack-serialized into the Mongo checkpointer after every super-step</b> — a Motor client or an <code>asyncio.Queue</code> in there is unserializable. So live handles ride a <code>ContextVar</code>. <code>ainvoke</code> copies the current context into each node task, which is exactly why binding it just before invocation makes it visible in all six nodes.</p></div>
+
+      <h3>The one config line that makes resume possible</h3>
+<pre>config = {
+    <span class="tok-s">"configurable"</span>: {<span class="tok-s">"thread_id"</span>: session_id},   <span class="tok-c"># NOT run_id</span>
+    <span class="tok-s">"recursion_limit"</span>: self.settings.workflow_recursion_limit,   <span class="tok-c"># 30</span>
+}
+
+<span class="tok-k">if</span> resume:
+    <span class="tok-k">return await</span> graph.ainvoke(<span class="tok-n">None</span>, config=config)   <span class="tok-c"># None ⇒ load last checkpoint</span></pre>
+      <p><code>thread_id</code> is the <b>session</b> id, not the run id. A resume creates a brand-new run document but reuses the same thread, so LangGraph finds the previous run's checkpoints and continues from the last completed node instead of starting over.</p>
+    </section>
+
+    <section id="graph" data-group="After the 202">
+      <div class="sec-head"><div><div class="sec-kicker">What runs</div><h2>Six nodes and one conditional loop</h2></div></div>
+      <div class="flow">
+        <div class="flow-box start"><b>planner</b><span class="sub">objective → research sub-questions</span></div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-box"><b>researcher</b><span class="sub">search + fetch + clean</span></div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-box"><b>signal_extractor</b><span class="sub">categorized business signals</span></div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-box"><b>analyst</b><span class="sub">synthesis</span></div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-box decision"><b>quality_check</b><span class="sub">coverage + confidence verdict</span></div>
+        <div class="flow-arr">↓</div>
+        <div class="flow-split">
+          <div class="flow-branch no">
+            <div class="blabel">needs more research</div>
+            <div class="flow-box"><b>↰ back to planner</b><span class="sub">only while missing_areas is non-empty and iteration &lt; 2</span></div>
+          </div>
+          <div class="flow-branch yes">
+            <div class="blabel">good enough</div>
+            <div class="flow-box end"><b>reporter → END</b><span class="sub">writes the 9-section report doc</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="callout why"><span class="ct">Two subtleties worth naming out loud</span><p><b>It loops to the planner, not the researcher.</b> The researcher already has every question in <code>researched_question_ids</code>, so returning to it would re-run the same plan and fetch nothing new. The planner reads <code>quality.missing_areas</code> and appends <i>sharper</i> gap-closing questions.</p><p><b>The empty-<code>missing_areas</code> guard is load-bearing.</b> The schema permits <code>needs_more_research=true</code> with no listed gaps — without a target the planner would just regenerate its original questions and spin until the iteration cap.</p></div>
+      <p>Every node body is wrapped in <code>async with emit_node(name)</code>, which brackets the work with <code>node_started</code> on entry and <code>node_finished</code> (with a preview and <code>duration_ms</code>) on clean exit. On exception it emits <code>node_errored</code> carrying <b>only a sanitized code</b> and re-raises, letting LangGraph's <code>RetryPolicy</code> take over for transient transport errors.</p>
+    </section>
+
+    <section id="cost-cap" data-group="After the 202">
+      <div class="sec-head"><div><div class="sec-kicker">Guardrail</div><h2>The cost cap is enforced <i>between</i> nodes</h2></div></div>
+      <p><code>set_cost_reporter</code> routes every LLM call's cost into <code>ctx.record_cost</code>, which accumulates and flips a <code>cost_exceeded</code> flag — and deliberately <b>never raises</b>.</p>
+      <div class="callout key"><span class="ct">Why the accumulator can't raise</span><p>It is called from inside the <b>retrying</b> LLM client. An exception there would be caught by the retry wrapper and trigger more calls — you would spend <i>more</i> money detecting that you had spent too much. So the check happens at the node boundary instead: after <code>node_finished</code> is emitted, an exceeded cap raises <code>CostCapExceeded</code>. The run fails cleanly after the over-budget node rather than thrashing inside it.</p></div>
+      <p>Default cap is <code>$1.00</code> per run, and the resulting failure is classified <code>retryable: false</code> — resuming would immediately re-trip the same cap, so the UI does not offer a Resume button.</p>
+    </section>
+
+    <section id="terminal" data-group="After the 202">
+      <div class="sec-head"><div><div class="sec-kicker">Bookkeeping</div><h2>How a run ends</h2></div></div>
+      <p><code>_complete</code> stamps <code>finished_at</code>, records <code>final_state_keys</code>, and persists <code>raw_sources</code> onto the run document — so follow-up chat can rank over the fetched sources without re-reading LangGraph checkpoint blobs. Then session → <code>completed</code>, metric, <code>run_completed</code> event.</p>
+      <h3><code>_fail</code> is the last line of defence, and it is written like one</h3>
+      <div class="callout gotcha"><span class="ct">The bug this design exists to prevent</span><p>If the failure handler itself raises, the run is stranded as <code>running</code> <b>forever</b> and the UI streams an event that never arrives. So every step is total or guarded: classification cannot throw, persistence sits in a <code>try</code>, and the <code>run_failed</code> emit is wrapped in <code>contextlib.suppress</code> inside the <code>finally</code>. <b>A stream that ends badly beats one that hangs.</b></p></div>
+      <h3>Nothing from the exception's text reaches the browser</h3>
+      <p><code>classify()</code> maps the exception to a fixed <code>Failure</code>: a stable <code>code</code> the frontend branches on, a written-for-humans <code>message</code>, and <code>retryable</code>. The raw text and traceback go to <code>error_detail</code> on the run document — a key <b>no API model reads</b> — and to the log line.</p>
+      <div class="callout why"><span class="ct">Why this matters concretely</span><p>OpenRouter answers a bad API key with <i>"User not found"</i>. Surfaced verbatim, a user reads that as <b>their own account</b> being gone. Provider error strings are written for the developer holding the key, not for the person waiting on a report — so classification happens once, at the boundary.</p></div>
+    </section>
+
+    <!-- ════════════ EVENTS ════════════ -->
+    <section id="events" data-group="The Event Trail">
+      <div class="sec-head"><div><div class="sec-kicker">Fan-out</div><h2>One <code>emit</code>, two sinks, one <code>seq</code></h2></div></div>
+      <p class="lead">Every node transition calls <code>emit()</code>, which does exactly two things in order.</p>
+      <ol class="steps">
+        <li><b>Durable, always.</b> An atomic <code>$push</code> onto <code>workflow_runs.events</code>, optionally also <code>$set</code>ting <code>node_status.&lt;node&gt;</code> in the same <code>update_one</code>. Mongo is the source of truth.</li>
+        <li><b>Best effort, in-process.</b> A publish to the <code>EventBus</code>. If nobody is subscribed it is a no-op — and the event has already landed in Mongo, so nothing is lost.</li>
+      </ol>
+      <p>The <code>seq</code> is a plain integer on the <code>RunContext</code>, monotonic from 1. It is the join key for the entire streaming story: backfill replays <code>seq &gt; since_seq</code>, the live loop drops anything at or below it, and the client de-duplicates by it. <a href="sse-streaming.html">The SSE deep dive</a> covers that half in full.</p>
+      <div class="callout info"><span class="ct">Backpressure without blocking the producer</span><p>Subscriber queues are bounded at 512. On overflow the bus evicts the <b>oldest</b> event and bumps a counter — a stalled browser tab can never block the workflow. Dropped events stay recoverable from Mongo via <code>since_seq</code>.</p></div>
+
+      <h3>A clean run is exactly fifteen events</h3>
+      <table class="tbl">
+        <tr><th>seq</th><th>kind</th><th>node</th><th>side effect</th></tr>
+        <tr><td>1</td><td><code>run_started</code></td><td><code>__run__</code></td><td>payload <code>{resume: false}</code></td></tr>
+        <tr><td>2 · 3</td><td><code>node_started</code> / <code>node_finished</code></td><td>planner</td><td><code>node_status.planner</code>: running → done</td></tr>
+        <tr><td>4 · 5</td><td><code>node_started</code> / <code>node_finished</code></td><td>researcher</td><td>preview carries source counts</td></tr>
+        <tr><td>6 · 7</td><td><code>node_started</code> / <code>node_finished</code></td><td>signal_extractor</td><td>—</td></tr>
+        <tr><td>8 · 9</td><td><code>node_started</code> / <code>node_finished</code></td><td>analyst</td><td>—</td></tr>
+        <tr><td>10 · 11</td><td><code>node_started</code> / <code>node_finished</code></td><td>quality_check</td><td>verdict drives the conditional edge</td></tr>
+        <tr><td>12</td><td><code>node_started</code></td><td>reporter</td><td>—</td></tr>
+        <tr><td>13</td><td><code>node_output</code></td><td>reporter</td><td>the only <code>ev.output()</code> in the codebase — carries <code>reportId</code></td></tr>
+        <tr><td>14</td><td><code>node_finished</code></td><td>reporter</td><td>report already upserted to <code>reports</code></td></tr>
+        <tr><td>15</td><td><code>run_completed</code></td><td><code>__run__</code></td><td>run + session → completed</td></tr>
+      </table>
+      <p class="muted">Measured, not counted by hand: running the end-to-end API test left exactly 15 events on the run document. Each research loop-back adds ten more (planner through quality_check), so a one-loop run lands at 25.</p>
+
+      <h3>The persisted record outranks the stream</h3>
+      <div class="callout gotcha"><span class="ct">A real bug that shaped the client</span><p>On the frontend, <code>deriveRunView(events, seed)</code> treats the <b>run document</b> as the authority on terminal state, not the event list. A run can reach <code>failed</code> in Mongo with no <code>run_failed</code> event ever emitted — which is exactly what happened when the failure handler itself threw. A view built from events alone showed "Researching…" forever.</p></div>
+    </section>
+
+    <!-- ════════════ FAILURE & EDGES ════════════ -->
+    <section id="exits" data-group="Failure &amp; Edges">
+      <div class="sec-head"><div><div class="sec-kicker">Reference</div><h2>Every way this can end</h2></div></div>
+      <table class="tbl">
+        <tr><th>Where</th><th>Trigger</th><th>Client sees</th></tr>
+        <tr><td>Rate limiter</td><td>&gt; 5 POSTs/min from one IP</td><td><span class="pill gold">429</span> <code>rate_limited</code> + <code>Retry-After: 60</code></td></tr>
+        <tr><td>Dependency</td><td>workflow clients cannot be built</td><td><span class="pill gold">503</span> <code>workflow_unavailable</code></td></tr>
+        <tr><td>Repository</td><td><code>session_id</code> is not an ObjectId</td><td><span class="pill gold">400</span> <code>invalid_id</code></td></tr>
+        <tr><td>Service</td><td>no such session</td><td><span class="pill gold">404</span> <code>session_not_found</code></td></tr>
+        <tr><td>Service</td><td>a run is already <code>running</code></td><td><span class="pill gold">409</span> <code>session_already_running</code></td></tr>
+        <tr><td>Handler</td><td>all gates pass</td><td><span class="pill acc">202</span> <code>{runId, status:"running"}</code></td></tr>
+        <tr><td>Node · transient</td><td>httpx / connection / timeout error</td><td>nothing — <code>RetryPolicy</code> retries silently, max 2 attempts</td></tr>
+        <tr><td>Node · fatal</td><td>non-transient, or retries exhausted</td><td><code>node_errored</code> (sanitized code only) → node card flips to Failed</td></tr>
+        <tr><td>Run</td><td>any uncaught exception</td><td><code>run_failed</code> over SSE; run + session <code>failed</code></td></tr>
+        <tr><td>Run</td><td>spend crosses <code>$1.00</code> at a node boundary</td><td><code>cost_cap_exceeded</code>, <code>retryable: false</code></td></tr>
+        <tr><td>Process</td><td>SIGTERM mid-run</td><td>lifespan flips sessions to <code>interrupted</code> → resume available</td></tr>
+        <tr><td>Process</td><td>hard kill</td><td>nothing is flipped; graph stops mid-node → see Sharp edges</td></tr>
+      </table>
+    </section>
+
+    <section id="edges" data-group="Failure &amp; Edges">
+      <div class="sec-head"><div><div class="sec-kicker">Know these cold</div><h2>Sharp edges</h2></div></div>
+      <p class="lead">None of these are bugs in the code as written. They are the consequences of choosing an in-process deferred coroutine over a job queue — and being able to name them unprompted is the difference between "I used BackgroundTasks" and "I chose BackgroundTasks."</p>
+
+      <h3>It is not a job queue</h3>
+      <p>Same process, same event loop, no persistence in the task object. Kill uvicorn mid-run and the graph simply stops — no retry, no redelivery, no other machine picking it up. What makes the work recoverable is the <b>Mongo checkpointer</b> plus the lifespan handler that flips still-running sessions to <code>interrupted</code> on graceful shutdown. Not <code>BackgroundTasks</code>.</p>
+
+      <h3>A hard kill strands the run row, not the session</h3>
+      <div class="callout gotcha"><span class="ct">An asymmetry worth knowing before you debug it</span><p><code>mark_running_interrupted</code> updates the <b><code>sessions</code></b> collection only. After a crash (or any exit that skips lifespan), the <code>workflow_runs</code> document stays <code>running</code> forever, so <code>has_active_run</code> keeps returning true and <code>POST /run</code> 409s <b>permanently</b> on that session — while <code>POST /run/resume</code> still works, because it checks session status instead.</p></div>
+
+      <h3>Two workers split the live stream</h3>
+      <p>The <code>EventBus</code> is a module-level object in one process. With more than one uvicorn worker, the POST may run the graph on worker A while the SSE connection lands on worker B, which sees no live events at all. Mongo backfill still works, so the UI paints correctly on refresh but never streams. <b>This is a liveness limitation, not a correctness one</b> — and the 409 guard survives, because it is a database read. Redis pub/sub or a real queue (ARQ/Celery) is the fix; it is called out as future work, not built.</p>
+
+      <h3>The 409 guard is check-then-act</h3>
+      <p><code>has_active_run</code> and <code>create_run</code> are two round-trips with no transaction and no unique index between them. Two simultaneous POSTs can both read "no active run" and both insert. The window is small and the rate limiter narrows it, but it is open — the durable fix is a partial unique index on <code>(session_id, status="running")</code>.</p>
+
+      <h3>In-process tests run the background <i>before</i> the POST returns</h3>
+      <div class="callout info"><span class="ct">Measured — and it inverts the obvious assumption</span><p>httpx's <code>ASGITransport</code> awaits <code>app(scope, receive, send)</code> to completion, and that call does not return until the background task finishes. I probed it against the repo's own fixtures: a <code>GET</code> issued <b>immediately</b> after the POST returned <code>status=completed, events=15</code> — the entire graph had already run. So a test asserting "still running right after the POST" would be asserting the opposite of what happens. Under real uvicorn the client genuinely does get its 202 first.</p></div>
+
+      <h3>A client that hangs up does not cancel the work</h3>
+      <p>Nothing checks for disconnect on the POST side. Close the tab a second after the 202 and the full run still executes, spends its LLM budget, and writes its report. Only the SSE handler watches <code>request.is_disconnected()</code>, and that ends the <i>stream</i>, not the run.</p>
+    </section>
+
+    <section id="resume" data-group="Failure &amp; Edges">
+      <div class="sec-head"><div><div class="sec-kicker">The sibling endpoint</div><h2>Resume, and why chat does it differently</h2></div></div>
+      <p><code>POST /run/resume</code> is structurally identical: validate, create a <b>new</b> run row, <code>add_task(runner.execute, …, resume=True)</code>, 202. Only the guard differs — it requires the session to be <code>failed</code> or <code>interrupted</code> rather than requiring no active run. All the continuity comes from <code>thread_id == session_id</code> in the checkpointer.</p>
+
+      <h3>Follow-up chat uses <code>asyncio.create_task</code> instead</h3>
+      <table class="tbl">
+        <tr><th></th><th>Workflow run</th><th>Chat reply</th></tr>
+        <tr><td>Mechanism</td><td><code>BackgroundTasks</code></td><td><code>asyncio.create_task</code></td></tr>
+        <tr><td>Starts</td><td>after the response is sent</td><td>during the request</td></tr>
+        <tr><td>Status</td><td><code>202 Accepted</code></td><td><code>200 OK</code></td></tr>
+        <tr><td>Shutdown</td><td>awaited by the ASGI call</td><td>explicitly cancelled by <code>stream_manager.shutdown()</code></td></tr>
+        <tr><td>Progress buffer</td><td>Mongo <code>workflow_runs.events</code></td><td>in-process <code>ChatStreamManager</code></td></tr>
+      </table>
+      <div class="callout why"><span class="ct">Why the difference is deliberate</span><p>The workflow's prep must be <b>committed</b> before the 202 body can honestly contain a <code>runId</code>, and the after-response slot is a <i>defined</i> point — no orphan task racing the response on its way out. A chat reply has no such receipt to commit and is short-lived, so a truly detached task with an in-memory buffer is the cheaper fit.</p></div>
+    </section>
+
+    <!-- ════════════ Q&A ════════════ -->
+    <section id="qa" data-group="Rapid-fire Q&amp;A">
+      <div class="sec-head"><div><div class="sec-kicker">Flashcards</div><h2>Rapid-fire</h2></div></div>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why 202 and not 200 or 201?</summary><div class="qa-body"><p><code>202 Accepted</code> means "I've taken responsibility for this work but haven't finished it." <code>200</code> would imply the result is in the body; <code>201</code> would imply a resource was created at a location you can now GET as the finished thing. The run <i>is</i> created — but what the client gets is a handle to watch, not the outcome. 202 is the honest code for async request-reply.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Does the request finish before the background task runs?</summary><div class="qa-body"><p>The <b>response</b> does; the <b>ASGI call</b> does not. Starlette sends <code>http.response.start</code> and <code>http.response.body</code>, then awaits the background task. So the client is released immediately, but the coroutine handling that connection stays alive until the graph finishes. That is why the POST's logged latency is milliseconds while the run is still going ninety seconds later. The loop is not blocked, though &#8212; every <code>await</code> in the graph yields, so other requests are served the whole time.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why must the run row be created before <code>add_task</code>?</summary><div class="qa-body"><p>Because the 202 body hands the client a <code>runId</code> it will immediately use for <code>GET /runs/{id}</code> and the SSE stream — both of which 404 on a missing document. Committing the receipt before handing it out is the general rule for async request-reply.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Can you use a request-scoped DB session in a background task?</summary><div class="qa-body"><p>No. The response is already sent, so anything tied to the request lifecycle is closed or closing. Argus gets away with it because <code>get_db</code> returns the process-wide Motor handle off <code>app.state</code>, not a per-request connection. With a typical SQLAlchemy session dependency you would open a fresh session inside the task instead.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why not just use Celery or ARQ?</summary><div class="qa-body"><p>You should, for a real deployment — and I'd say so. <code>BackgroundTasks</code> buys simplicity: no broker, no worker fleet, no serialization boundary. What it costs is durability (a kill loses the in-flight run), multi-worker fan-out (the live event bus is in-process), and isolation (a heavy run competes with request handling on the same loop). Argus mitigates the first with the Mongo checkpointer plus resume, and documents the second as a known limit.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>What stops two runs racing on the same session?</summary><div class="qa-body"><p><code>has_active_run</code> — a projected <code>find_one</code> for a <code>running</code> run — returns 409 before anything is created. Without it, two POSTs would queue two <code>execute</code>s against the same <code>thread_id</code> and interleave their checkpoint writes. It is check-then-act though, so two truly simultaneous requests can both pass; a partial unique index on <code>(session_id, status="running")</code> would make it airtight.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>How does a crashed run become resumable?</summary><div class="qa-body"><p>Two pieces. The <b>checkpointer</b> snapshots graph state to Mongo after every super-step, keyed by <code>thread_id = session_id</code>. The <b>lifespan handler</b> flips any still-running session to <code>interrupted</code> on graceful shutdown, which is a state <code>resume_run</code> accepts. Resume then creates a new run row and calls <code>ainvoke(None, config)</code> — passing <code>None</code> tells LangGraph to load the last checkpoint rather than start fresh.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why is the cost cap checked between nodes instead of inside the LLM client?</summary><div class="qa-body"><p>Because the accumulator runs inside the <b>retrying</b> client. Raising there would be caught by the retry wrapper and trigger further calls — you'd spend more money detecting overspend. So <code>record_cost</code> only sets a flag, and <code>emit_node</code> raises <code>CostCapExceeded</code> at the node boundary after <code>node_finished</code>. The run dies cleanly instead of thrashing.</p></div></details>
+
+      <details class="qa"><summary><svg class="q-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>Why doesn't the client ever see the real exception?</summary><div class="qa-body"><p>Provider errors are written for the developer holding the API key. OpenRouter answers a bad key with "User not found", which a user reads as <i>their</i> account being gone — misleading, and it discloses infrastructure on a public endpoint. So <code>classify()</code> maps the exception to a stable <code>code</code>, a human <code>message</code>, and a <code>retryable</code> flag; the raw text and traceback go to <code>error_detail</code> (which no API model reads) and the logs.</p></div></details>
+
+      <p class="footer-note">If you can draw the two-releases picture — client free at the response body, worker free at the end of the ASGI call — and then name what that costs you (no durability, in-process bus, no cancellation), you've shown async API design, ASGI internals, and honest trade-off reasoning in one answer. <a href="argus-prep.html">← Back to Argus Prep</a></p>
+    </section>
+
+    <div class="no-results" id="noResults">No topics match your filter.</div>
+    </div>
+  </main>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

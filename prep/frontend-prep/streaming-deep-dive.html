@@ -15,7 +15,7 @@
 
 <div class="app">
   <aside class="sidebar">
-    <a class="back-link" href="index.html">
+    <a class="back-link" href="frontend-prep.html">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
       Back to the frontend playbook
     </a>
@@ -35,6 +35,21 @@
       <input class="search" id="search" placeholder="Filter topics…  (press /)" autocomplete="off" />
     </div>
 
+    <nav class="nav-pages" style="border-bottom:1px solid var(--border);margin:0 0 12px;padding-bottom:8px">
+      <div class="nav-group">
+        <div class="nav-group-title">Backend &amp; system design</div>
+        <a class="nav-link" href="../argus-prep.html"><span class="dot"></span><span class="lbl">Argus Prep &middot; hub</span></a>
+        <a class="nav-link" href="../langgraph-workflow.html"><span class="dot"></span><span class="lbl">LangGraph Workflow</span></a>
+        <a class="nav-link" href="../sse-streaming.html"><span class="dot"></span><span class="lbl">SSE + sinceSeq</span></a>
+        <a class="nav-link" href="../background-tasks-202.html"><span class="dot"></span><span class="lbl">202 + BackgroundTasks</span></a>
+        <a class="nav-link" href="../url-shortener.html"><span class="dot"></span><span class="lbl">URL Shortener</span></a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Frontend</div>
+        <a class="nav-link" href="frontend-prep.html"><span class="dot"></span><span class="lbl">Frontend Prep &middot; hub</span></a>
+        <span class="nav-link active" aria-current="page" style="cursor:default"><span class="dot"></span><span class="lbl">Streaming &amp; Optimistic UI</span></span>
+      </div>
+    </nav>
     <nav id="nav"></nav>
   </aside>
 
@@ -455,7 +470,7 @@ useEffect(() => {
         </ul>
       </div>
       <div class="callout key"><span class="ct">Bring it home</span><p>When the SSE/streaming question comes, don't recite the protocol — tell the Argus story: "I stream LLM tokens over SSE because the flow is one-directional; I make it resumable with a <code>seq</code> cursor so a refresh never loses the reply; and I wrap it in optimistic UI so it feels instant while staying honest — the placeholder always converges on the persisted truth." That's one answer that covers transport, resilience, and UX in three sentences.</p></div>
-      <p class="footer-note"><a href="index.html">← Back to the frontend playbook</a> · This page pairs with the <b>Custom hooks &amp; optimistic UI</b> and <b>Streaming data into React (SSE)</b> sections there.</p>
+      <p class="footer-note"><a href="frontend-prep.html">← Back to the frontend playbook</a> · This page pairs with the <b>Custom hooks &amp; optimistic UI</b> and <b>Streaming data into React (SSE)</b> sections there.</p>
     </section>
 
     <div class="no-results" id="noResults">No topics match your filter.</div>
