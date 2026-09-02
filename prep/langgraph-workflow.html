@@ -39,6 +39,7 @@
         <div class="nav-group-title">Backend &amp; system design</div>
         <a class="nav-link" href="argus-prep.html"><span class="dot"></span><span class="lbl">Argus Prep &middot; hub</span></a>
         <span class="nav-link active" aria-current="page" style="cursor:default"><span class="dot"></span><span class="lbl">LangGraph Workflow</span></span>
+        <a class="nav-link" href="researcher-node.html"><span class="dot"></span><span class="lbl">The Researcher Node</span></a>
         <a class="nav-link" href="sse-streaming.html"><span class="dot"></span><span class="lbl">SSE + sinceSeq</span></a>
         <a class="nav-link" href="background-tasks-202.html"><span class="dot"></span><span class="lbl">202 + BackgroundTasks</span></a>
         <a class="nav-link" href="url-shortener.html"><span class="dot"></span><span class="lbl">URL Shortener</span></a>
@@ -87,30 +88,93 @@
     <section id="topology" data-group="The graph">
       <div class="sec-head"><div><div class="sec-kicker">The graph</div><h2>The shape: a linear backbone with one loop</h2></div></div>
       <p class="lead">Draw this first. Five of the six nodes form a straight pipeline; the only branch is the quality gate, and it loops back to the <b>planner</b> — not the researcher.</p>
-<pre class="ascii">           ┌─────────┐   needs_more_research? (bounded loop)
-  START ──▶ │ planner │ ◀─────────── yes ──────────────┐
-           └────┬────┘   turns missing_areas into       │
-                ▼        fresh gap-closing questions     │
-         ┌────────────┐                                  │
-         │ researcher │  search + fetch + clean          │
-         └─────┬──────┘  → raw_sources (reducer)         │
-               ▼                                          │
-      ┌──────────────────┐                               │
-      │ signal_extractor │  funding / hiring / product…  │
-      └────────┬─────────┘                               │
-               ▼                                          │
-          ┌──────────┐                                    │
-          │ analyst  │  synthesize overview / risks…      │
-          └────┬─────┘                                    │
-               ▼                                          │
-       ┌───────────────┐                                 │
-       │ quality_check │ ───────── yes ──────────────────┘
-       └───────┬───────┘
-               │ no  (or iteration cap hit)
-               ▼
-          ┌──────────┐
-          │ reporter │  emit nine-section report → END
-          └──────────┘</pre>
+<div class="card" style="padding:20px 16px 12px">
+      <div style="overflow-x:auto">
+      <svg viewBox="0 0 800 692" role="img" style="min-width:640px;width:100%;height:auto;display:block;font-family:var(--mono)"
+           aria-label="The workflow graph: START into planner, then researcher, signal_extractor, analyst and quality_check in a straight line. quality_check either loops back up to planner while coverage is insufficient, or falls through to reporter and END.">
+        <defs>
+          <marker id="lg-ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--text-2)"/>
+          </marker>
+          <marker id="lg-gold" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--gold)"/>
+          </marker>
+          <marker id="lg-acc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0 0 L10 5 L0 10 z" fill="var(--accent)"/>
+          </marker>
+        </defs>
+
+        <!-- START -->
+        <text x="255" y="40" font-size="11" fill="var(--accent)" text-anchor="middle" letter-spacing="1.2">START</text>
+        <path d="M255 50 L255 70" stroke="var(--accent)" stroke-width="1.4" fill="none" marker-end="url(#lg-acc)"/>
+
+        <!-- ============ nodes ============ -->
+        <g stroke-width="1.4" fill="var(--panel-2)">
+          <rect x="150" y="76"  width="210" height="52" rx="10" stroke="var(--accent)"/>
+          <rect x="150" y="172" width="210" height="52" rx="10" stroke="var(--border-2)"/>
+          <rect x="150" y="268" width="210" height="52" rx="10" stroke="var(--border-2)"/>
+          <rect x="150" y="364" width="210" height="52" rx="10" stroke="var(--border-2)"/>
+          <rect x="150" y="460" width="210" height="52" rx="10" stroke="var(--gold)"/>
+          <rect x="150" y="556" width="210" height="52" rx="10" stroke="var(--accent)"/>
+        </g>
+        <g font-size="13.5" fill="var(--text)" text-anchor="middle" font-weight="600">
+          <text x="255" y="107">planner</text>
+          <text x="255" y="203">researcher</text>
+          <text x="255" y="299">signal_extractor</text>
+          <text x="255" y="395">analyst</text>
+          <text x="255" y="491" fill="var(--gold)">quality_check</text>
+          <text x="255" y="587">reporter</text>
+        </g>
+
+        <!-- ============ forward edges ============ -->
+        <g stroke="var(--text-2)" stroke-width="1.4" fill="none" marker-end="url(#lg-ar)">
+          <path d="M255 128 L255 166"/>
+          <path d="M255 224 L255 262"/>
+          <path d="M255 320 L255 358"/>
+          <path d="M255 416 L255 454"/>
+        </g>
+        <path d="M255 512 L255 550" stroke="var(--accent)" stroke-width="1.6" fill="none" marker-end="url(#lg-acc)"/>
+        <text x="266" y="536" font-size="11" fill="var(--accent)">no &#183; or iteration cap hit</text>
+
+        <!-- END -->
+        <path d="M255 608 L255 634" stroke="var(--accent)" stroke-width="1.4" fill="none" marker-end="url(#lg-acc)"/>
+        <text x="255" y="662" font-size="11" fill="var(--accent)" text-anchor="middle" letter-spacing="1.2">END</text>
+
+        <!-- ============ the one back edge ============ -->
+        <path d="M150 486 L96 486 L96 102 L144 102" stroke="var(--gold)" stroke-width="1.6" fill="none" marker-end="url(#lg-gold)"/>
+        <circle cx="150" cy="486" r="3.5" fill="var(--gold)"/>
+        <text x="104" y="92" font-size="11" fill="var(--gold)">yes &#8594; replan the gaps</text>
+        <text transform="rotate(-90 82 300)" x="82" y="300" font-size="10.5" fill="var(--muted)" text-anchor="middle">bounded loop &#183; max 2 research iterations</text>
+
+        <!-- ============ right-hand annotations ============ -->
+        <g font-size="10.5" fill="var(--muted)">
+          <text x="382" y="96">objective &#8594; focused sub-questions</text>
+          <text x="382" y="112" fill="var(--gold)">on re-entry: missing_areas &#8594; new questions</text>
+
+          <text x="382" y="192">search + fetch + clean</text>
+          <text x="382" y="208">&#8594; raw_sources <tspan fill="var(--text-2)">(reducer: append, dedupe by url)</tspan></text>
+
+          <text x="382" y="288">funding / hiring / product / news / partnership</text>
+          <text x="382" y="304">&#8594; extracted_signals</text>
+
+          <text x="382" y="384">overview &#183; products &#183; customers &#183; risks</text>
+          <text x="382" y="400">&#8594; analysis</text>
+
+          <text x="382" y="480">coverage + confidence scores</text>
+          <text x="382" y="496">&#8594; quality <tspan fill="var(--text-2)">{needs_more_research, missing_areas}</tspan></text>
+
+          <text x="382" y="576">nine-section briefing, upserted to <tspan fill="var(--text-2)">reports</tspan></text>
+          <text x="382" y="592">&#8594; report</text>
+        </g>
+
+        <!-- the routing predicate, spelled out -->
+        <line x1="96" y1="686" x2="704" y2="686" stroke="var(--border)"/>
+        <text x="96" y="678" font-size="10.5" fill="var(--muted)">route_after_quality &#8594; "planner" only if  needs_more_research  &and;  missing_areas is non-empty  &and;  research_iteration &lt; 2   &#8212;  else "reporter"</text>
+      </svg>
+      </div>
+      <p class="muted" style="font-size:12.5px;margin:10px 2px 0">Five nodes in a straight line, one back edge. The loop targets the <b>planner</b>, not the researcher &#8212; the researcher already holds every question in <code>researched_question_ids</code>, so re-entering it would fetch nothing new. The gap has to become <i>new questions</i> first.</p>
+    </div>
+
       <div class="callout info"><span class="ct">The one-breath summary</span><p>"<b>Plan</b> the questions → <b>research</b> the web → <b>extract</b> structured signals → <b>analyse</b> into prose → <b>gate</b> on quality → either loop back to plan sharper questions, or <b>report</b>." Six nodes, one branch, one accumulator.</p></div>
     </section>
 
@@ -357,6 +421,91 @@ config = {
       <p>LangGraph executes in <b>super-steps</b> (one "tick" where the eligible nodes run). Checkpointing at that boundary means state is always <b>consistent</b> — you never persist a half-updated state mid-node. Same instinct as committing a DB transaction at a clean boundary, not mid-write.</p>
       <div class="callout gotcha"><span class="ct">What's NOT guaranteed — say it first</span><p><b>Exactly-once external side effects.</b> A node that crashed mid-LLM-call may <b>re-issue</b> that call on resume — so it's <b>at-least-once</b>, not exactly-once. Durable <i>state</i> ≠ exactly-once <i>actions</i>. That distinction is a genuinely senior thing to volunteer. (Graceful shutdown also flips a <code>running</code> session to a resumable <code>interrupted</code> on SIGTERM, so a deploy never strands a run.)</p></div>
       <p>The live-streaming half of recoverability — reconnecting mid-run with no gaps or duplicates — is its own mechanism: see the <a href="sse-streaming.html">SSE + sinceSeq deep dive</a>.</p>
+    </section>
+
+    <section id="checkpoint-anatomy" data-group="Failure & resume">
+      <div class="sec-head"><div><div class="sec-kicker">Under the hood</div><h2>What a checkpoint physically is</h2></div></div>
+      <p class="lead">&ldquo;State is snapshotted to Mongo&rdquo; is the one-liner. The actual storage is three collections, and the split is the interesting part.</p>
+
+      <table class="tbl">
+        <tr><th>Collection</th><th>One document per</th><th>Holds</th></tr>
+        <tr><td><code>workflow_checkpoints</code></td><td>super-step</td><td>the checkpoint object <i>minus</i> its channel values, plus metadata and <code>parent_checkpoint_id</code></td></tr>
+        <tr><td><code>workflow_checkpoint_blobs</code></td><td>channel <b>version</b></td><td>one serialized channel value, keyed <code>(thread, ns, channel, version)</code></td></tr>
+        <tr><td><code>workflow_checkpoint_writes</code></td><td>task output</td><td>pending writes recorded <i>before</i> the next checkpoint exists</td></tr>
+      </table>
+
+      <h3>Why the values live in a separate collection</h3>
+      <p>Because a channel value is addressed by <code>(thread, ns, channel, version)</code> <b>independently of any single checkpoint</b>. If a super-step does not rewrite <code>raw_sources</code>, the new checkpoint simply keeps pointing at the existing version &mdash; nothing is re-serialized and nothing is duplicated. You can see it in <code>aput</code>, which only writes blobs for the channels in <code>new_versions</code>:</p>
+<pre><span class="tok-c"># only the channels that changed this super-step get a new blob</span>
+<span class="tok-k">for</span> channel, version <span class="tok-k">in</span> new_versions.items():
+    <span class="tok-k">if</span> channel <span class="tok-k">in</span> channel_values:
+        type_, blob = self._dump(channel_values[channel])
+    <span class="tok-k">else</span>:
+        type_, blob = <span class="tok-s">"empty"</span>, Binary(b<span class="tok-s">""</span>)
+    <span class="tok-k">await</span> self.db[WORKFLOW_CHECKPOINT_BLOBS].update_one(
+        {<span class="tok-s">"thread_id"</span>: thread_id, <span class="tok-s">"checkpoint_ns"</span>: checkpoint_ns,
+         <span class="tok-s">"channel"</span>: channel, <span class="tok-s">"version"</span>: version},
+        {<span class="tok-s">"$set"</span>: {<span class="tok-s">"type"</span>: type_, <span class="tok-s">"blob"</span>: blob}}, upsert=<span class="tok-n">True</span>)</pre>
+      <p>Reading is the mirror image: <code>_load_blobs</code> walks <code>checkpoint["channel_versions"]</code> and fetches exactly the version each channel was pinned to. That is content-addressed storage in miniature &mdash; a later checkpoint reusing an earlier blob is the whole point, and it is why a nine-super-step run does not store nine copies of your source corpus.</p>
+
+      <div class="callout info"><span class="ct">Serialization</span><p>Values go through LangGraph&rsquo;s own <code>serde</code> (<code>dumps_typed</code> &rarr; msgpack <code>bytes</code>) and land as BSON <code>Binary</code>. Deliberate: the graph state never touches BSON&rsquo;s type system, so <code>ObjectId</code> and Pydantic quirks cannot leak into a checkpoint or corrupt a reload.</p></div>
+
+      <h3>Checkpoints form a linked list</h3>
+      <p>Each document carries <code>parent_checkpoint_id</code>, so a thread&rsquo;s checkpoints chain back to the first super-step. <code>alist</code> walks that chain newest-first &mdash; the basis for time-travel and for inspecting a run&rsquo;s history. Two indexes back it: a unique <code>(thread_id, checkpoint_ns, checkpoint_id)</code>, and <code>(thread_id, ts&nbsp;desc)</code> for &ldquo;give me the latest.&rdquo;</p>
+    </section>
+
+    <section id="resume-path" data-group="Failure & resume">
+      <div class="sec-head"><div><div class="sec-kicker">Resume</div><h2>The resume path, end to end</h2></div></div>
+      <p class="lead">A resume is a <b>new run record over an old thread</b>. Nothing rewinds; the graph just picks up a frontier that was never finished.</p>
+
+      <div class="flow">
+        <div class="flow-box start"><b>POST /run/resume</b><span class="sub">guard: session is <code>failed</code> or <code>interrupted</code> &mdash; not &ldquo;no active run&rdquo;</span></div>
+        <div class="flow-arr">&darr;</div>
+        <div class="flow-box"><b>runner.resume()</b><span class="sub">inserts a <b>new</b> run doc &mdash; new runId, fresh event timeline</span></div>
+        <div class="flow-arr" data-label="202">&darr;</div>
+        <div class="flow-box"><b>add_task(execute, &hellip;, resume=True)</b><span class="sub">same after-response slot as a normal run</span></div>
+        <div class="flow-arr">&darr;</div>
+        <div class="flow-box decision"><b>graph.ainvoke(None, config)</b><span class="sub"><code>thread_id</code> is still the <b>session</b> id &mdash; that is the join</span></div>
+        <div class="flow-arr">&darr;</div>
+        <div class="flow-box end"><b>continues from the unfinished frontier</b><span class="sub">completed nodes never re-run</span></div>
+      </div>
+
+      <h3>What <code>None</code> makes the checkpointer do</h3>
+      <p>With no <code>checkpoint_id</code> in the config, <code>aget_tuple</code> takes the <b>latest</b> checkpoint for the thread &mdash; ids are monotonic and sortable, so it is one indexed query &mdash; then rehydrates the values and any pending writes:</p>
+<pre>doc = <span class="tok-k">await</span> self.db[WORKFLOW_CHECKPOINTS].find_one(
+    query, sort=[(<span class="tok-s">"checkpoint_id"</span>, -1)]
+)
+channel_values = <span class="tok-k">await</span> self._load_blobs(
+    thread_id, checkpoint_ns, checkpoint[<span class="tok-s">"channel_versions"</span>]
+)
+writes = <span class="tok-k">await</span> self._load_writes(thread_id, checkpoint_ns, doc[<span class="tok-s">"checkpoint_id"</span>])</pre>
+
+      <h3>How LangGraph knows <i>where</i> to continue</h3>
+      <p>This is the part worth getting right out loud. The checkpoint does <b>not</b> store &ldquo;we were at node 4.&rdquo; It stores two maps:</p>
+      <ol class="steps">
+        <li><code>channel_versions</code> &mdash; the current version of every channel.</li>
+        <li><code>versions_seen</code> &mdash; per node, the channel versions <i>that node has already observed</i>. LangGraph&rsquo;s own docstring for the field: <i>&ldquo;Used to determine which nodes to execute next.&rdquo;</i></li>
+      </ol>
+      <p>A node becomes eligible when a channel it subscribes to carries a version <b>newer</b> than the one it last saw. Nodes that already ran have seen the current versions, so they are not eligible; the nodes that were about to run still have not. <b>The resume point is derived, not remembered</b> &mdash; which is why it survives a hard kill with no shutdown hook, and why it is still correct if the process died mid-super-step.</p>
+
+      <div class="callout gotcha"><span class="ct">Why <code>None</code> and not the initial dict</span><p>Passing a state dict on resume would be read as <b>new input</b>: it is applied as an update, which bumps channel versions, which makes downstream nodes eligible again. You would re-run completed work &mdash; and worse, the reducer channels would <b>double-append</b>, because <code>raw_sources</code> and <code>researched_question_ids</code> accumulate rather than overwrite. <code>None</code> means &ldquo;no new input, just finish the pending frontier.&rdquo;</p></div>
+
+      <h3>Proof, from the test suite</h3>
+      <p><code>test_resume_continues_from_checkpoint_without_rerunning</code> crashes the graph in the analyst, then resumes on the same thread with a healthy LLM. It asserts the checkpoint survived with partial state &mdash; and, more tellingly, that the researcher never ran again:</p>
+<pre><span class="tok-c"># state survived, but the run had not reached the reporter</span>
+<span class="tok-k">assert</span> <span class="tok-s">"extracted_signals"</span> <span class="tok-k">in</span> tup.checkpoint[<span class="tok-s">"channel_values"</span>]
+<span class="tok-k">assert</span> <span class="tok-s">"report"</span> <span class="tok-k">not in</span> tup.checkpoint[<span class="tok-s">"channel_values"</span>]
+
+final = <span class="tok-k">await</span> _run(graph2, db, session_id, <span class="tok-n">None</span>)      <span class="tok-c"># None -&gt; resume</span>
+
+<span class="tok-k">assert</span> <span class="tok-s">"report"</span> <span class="tok-k">in</span> final
+<span class="tok-c"># the search client is shared across both attempts, so zero new calls</span>
+<span class="tok-c"># proves the researcher genuinely did not re-execute</span>
+<span class="tok-k">assert</span> len(search.calls) == searches_before</pre>
+
+      <h3>What resume does <b>not</b> restore</h3>
+      <div class="callout key"><span class="ct">The graph state continues; the observability does not</span><p><code>RunContext</code> is rebuilt from scratch, so its <code>seq</code> counter restarts at 1 against a <b>new run document</b>. A resumed run has its own event timeline beginning with <code>run_started {resume: true}</code>, and the UI must watch the <b>new</b> <code>runId</code>. Graph state is continuous across the two runs; the event trail is not &mdash; the runs are siblings on one thread.</p></div>
+      <p>One consequence, documented in the <a href="background-tasks-202.html#edges">202 deep dive</a>: after a hard kill the old run row is still <code>running</code>, so <code>POST /run</code> keeps returning 409 while <code>POST /run/resume</code> works &mdash; because resume checks <i>session</i> status, not the run. Knowing which of the two guards you are hitting is the difference between a five-minute debug and a two-hour one.</p>
     </section>
 
     <!-- ════════════ DEEPER ════════════ -->
